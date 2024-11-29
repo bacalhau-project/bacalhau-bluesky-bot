@@ -143,12 +143,45 @@ func FetchNotifications(jwt string) ([]Notification, error) {
 func ReplyToMention(jwt string, notif Notification, text string, userDid string) (string, error) {
 	url := fmt.Sprintf("%s/com.atproto.repo.createRecord", blueskyAPIBase)
 
+	// Find the byte positions of the URL in the text
+	urlStart := strings.Index(text, "https://docs.bacalhau.org")
+	if urlStart == -1 {
+		return "", fmt.Errorf("URL not found in the reply text")
+	}
+
+	// Find the first space after the URL to calculate urlEnd
+	urlEnd := strings.Index(text[urlStart:], " ")
+	if urlEnd == -1 {
+		urlEnd = len(text) // If no space is found, assume the URL goes to the end of the text
+	} else {
+		urlEnd += urlStart // Adjust relative index to absolute
+	}
+
+	// Define the facet for the URL
+	var facets []map[string]interface{}
+	if urlStart != -1 {
+		facets = append(facets, map[string]interface{}{
+			"index": map[string]int{
+				"byteStart": urlStart,
+				"byteEnd":   urlEnd,
+			},
+			"features": []map[string]string{
+				{
+					"$type": "app.bsky.richtext.facet#link",
+					"uri":   text[urlStart:urlEnd],
+				},
+			},
+		})
+	}
+
+	// Construct the payload with facets
 	payload := map[string]interface{}{
 		"collection": "app.bsky.feed.post",
 		"repo":       userDid, // Use the authenticated user's DID
 		"record": map[string]interface{}{
 			"$type":     "app.bsky.feed.post",
 			"text":      text,
+			"facets":    facets, // Include facets in the record
 			"createdAt": time.Now().Format(time.RFC3339),
 			"reply": map[string]interface{}{
 				"root": map[string]string{
@@ -199,6 +232,7 @@ func ReplyToMention(jwt string, notif Notification, text string, userDid string)
 
 	return "", fmt.Errorf("response URI not found")
 }
+
 
 func ProcessNotificationText(notifications []Notification) []Notification {
 	for i, notif := range notifications {

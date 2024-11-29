@@ -178,8 +178,6 @@ func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostCom
 		}
 	}
 
-	fmt.Println("components:", components)
-
 	// Check if the post matches the pattern
 	return isCommand, components
 }

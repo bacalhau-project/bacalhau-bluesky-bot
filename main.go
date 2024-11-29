@@ -31,9 +31,9 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 	replyText := ""
 
 	if result.ExecutionID != "" && result.Stdout != ""{
-		replyText = fmt.Sprintf("Your Bacalhau Job executed successfully 🥳🐟\n\nThe Job ID was: %s.\n\nThe Execution ID was : %s.\n\nThe output was: %s\n\n\nYou can do even more with Bacalhau! Check out our docs at https://docs.bacalhau.org", result.JobID, result.ExecutionID, result.Stdout)
+		replyText = fmt.Sprintf("Your Bacalhau Job executed successfully 🥳🐟\n\nThe Job ID was: %s.\n\nThe Execution ID was : %s.\n\nThe output was: %s\n\n🐟🐟🐟🐟🐟\n\nYou can do even more with Bacalhau! Check out our docs at https://docs.bacalhau.org", result.JobID, result.ExecutionID, result.Stdout)
 	} else {
-		replyText = fmt.Sprintf("Sorry! We don't have results for your Bacalhau Job yet!\n\nYou can still get your results with the Bacalhau CLI. Check out https://docs.bacalhau.org/getting-started/installation, and then run...\n\nbacalhau job describe %s\n\n...to get your results!", result.JobID)
+		replyText = fmt.Sprintf("Sorry! We don't have results for your Bacalhau Job yet!\n\nYou can still get your results with the Bacalhau CLI. Check out https://docs.bacalhau.org/getting-started/installation - and then run...\n\nbacalhau job describe %s\n\n...to get your results!", result.JobID)
 
 		fmt.Println(replyText)
 	}
