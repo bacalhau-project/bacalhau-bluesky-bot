@@ -36,6 +36,9 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 		replyText = fmt.Sprintf("Sorry! We don't have results for your Bacalhau Job yet!\n\nYou can still get your results with the Bacalhau CLI. Check out https://docs.bacalhau.org/getting-started/installation - and then run...\n\nbacalhau job describe %s\n\n...to get your results!", result.JobID)
 
 		fmt.Println(replyText)
+		
+		go bacalhau.StopJob(result.JobID, "The job ran too long for the Bacalhau Bot to tolerate.", true)
+
 	}
 
 	// Respond to the mention

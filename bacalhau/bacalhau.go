@@ -157,6 +157,56 @@ func CreateJob(jobSpec string) (*JobExecutionResult, error) {
 	return result, nil
 }
 
+func StopJob(jobID, reason string, wait bool) (string, error) {
+
+	if wait == true {
+		fmt.Println("Waiting 40 seconds before killing job with ID:", jobID)
+		time.Sleep(40 * time.Second)
+	}
+
+	// Construct the URL for stopping the job
+	url := fmt.Sprintf("http://%s/api/v1/orchestrator/jobs/%s", BACALHAU_HOST, jobID)
+
+	// Create the payload with the reason
+	payload := map[string]string{"reason": reason}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal payload: %v", err)
+	}
+
+	// Create a new HTTP DELETE request
+	req, err := http.NewRequest("DELETE", url, bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create HTTP request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// Send the request using the default HTTP client
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send HTTP request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check if the request was successful
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to stop job, status code: %d", resp.StatusCode)
+	}
+
+	// Decode the response body to get the evaluation ID
+	var response struct {
+		EvaluationID string `json:"EvaluationID"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return "", fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	fmt.Println("Job stopped:", jobID)
+
+	return response.EvaluationID, nil
+}
+
 func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostComponents) {
 	// Define the regex pattern to validate the command structure
 	pattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+job\s+run\s+https?://\S+$`
