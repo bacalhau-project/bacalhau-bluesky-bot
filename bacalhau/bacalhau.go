@@ -9,11 +9,18 @@ import(
 	"strings"
 	"io/ioutil"
 	"net/http"
+	"time"
 	
 	"bbb/bsky"
 
 	"gopkg.in/yaml.v3"
 )
+
+type JobExecutionResult struct {
+	JobID        string `json:"JobID"`
+	ExecutionID  string `json:"ExecutionID"`
+	Stdout       string `json:"Stdout"`
+}
 
 var BACALHAU_HOST string
 
@@ -61,7 +68,8 @@ func GetLinkedJobFile(url string) (string, error) {
 	return string(jsonContent), nil
 }
 
-func CreateJob(jobSpec string) error {
+func CreateJob(jobSpec string) (*JobExecutionResult, error) {
+	// Endpoint to submit the job
 	url := fmt.Sprintf("http://%s/api/v1/orchestrator/jobs", BACALHAU_HOST)
 
 	fmt.Println("Sending job to:", url)
@@ -72,7 +80,7 @@ func CreateJob(jobSpec string) error {
 	// Create a new HTTP POST request
 	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %v", err)
+		return nil, fmt.Errorf("failed to create HTTP request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -80,23 +88,73 @@ func CreateJob(jobSpec string) error {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send HTTP request: %v", err)
+		return nil, fmt.Errorf("failed to send HTTP request: %v", err)
 	}
 	defer resp.Body.Close()
 
 	// Check if the request was successful
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to create job, status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to create job, status code: %d", resp.StatusCode)
 	}
 
-	// Optionally, decode the response body to get details about the created job
-	var response map[string]interface{}
+	// Decode the response body to get the job details
+	var response struct {
+		JobID string `json:"JobID"`
+	}
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return fmt.Errorf("failed to decode response: %v", err)
+		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	fmt.Println("Job created successfully:", response)
-	return nil
+	fmt.Printf("Job created successfully with ID: %s\n", response.JobID)
+
+	// Wait for 20 seconds
+	fmt.Println("Waiting for 20 seconds before querying executions...")
+	time.Sleep(20 * time.Second)
+
+	// Query the executions endpoint
+	executionsURL := fmt.Sprintf("http://%s/api/v1/orchestrator/jobs/%s/executions", BACALHAU_HOST, response.JobID)
+	req, err = http.NewRequest("GET", executionsURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for executions: %v", err)
+	}
+
+	resp, err = client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch executions: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch executions, status code: %d", resp.StatusCode)
+	}
+
+	// Decode the executions response
+	var executionsResponse struct {
+		Items []struct {
+			ID         string `json:"ID"`
+			RunOutput  struct {
+				Stdout string `json:"Stdout"`
+			} `json:"RunOutput"`
+		} `json:"Items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&executionsResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode executions response: %v", err)
+	}
+
+	// Extract the first execution result
+	if len(executionsResponse.Items) == 0 {
+		return nil, fmt.Errorf("no executions found for JobID: %s", response.JobID)
+	}
+	firstExecution := executionsResponse.Items[0]
+
+	// Populate the result struct
+	result := &JobExecutionResult{
+		JobID:       response.JobID,
+		ExecutionID: firstExecution.ID,
+		Stdout:      firstExecution.RunOutput.Stdout,
+	}
+
+	return result, nil
 }
 
 func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostComponents) {
