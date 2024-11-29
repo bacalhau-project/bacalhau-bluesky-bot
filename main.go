@@ -6,15 +6,30 @@ import (
 	"os"
 	
 	"bbb/bsky"
+	"bbb/bacalhau"
 	"github.com/joho/godotenv"
 )
 
-var (
-	blueskyAPIBase = "https://bsky.social/xrpc"
-	username       = ""
-	password       = ""
-)
+func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notification, jobFileLink string){
 
+	jobFile, jobFileErr := bacalhau.GetLinkedJobFile(jobFileLink)
+
+	fmt.Println(jobFile)
+
+	if jobFileErr != nil {
+		fmt.Println("Could not get job file to dispatch job")
+		fmt.Println(jobFileErr)
+		return
+	}
+
+	// Respond to the mention
+	replyText := "Ping!"
+	responseUri, err := bsky.ReplyToMention(session.AccessJwt, notif, replyText, session.Did)
+	fmt.Println("Error responding to mention:", err)
+
+	bsky.RecordResponse(responseUri) // Record the reply
+
+}
 
 func main() {
 	// Load environment variables
@@ -23,16 +38,16 @@ func main() {
 		fmt.Println("Could not find .env file. Continuing with existing environment variables.")
 	}
 
-	username = os.Getenv("BLUESKY_USER")
-	password = os.Getenv("BLUESKY_PASS")
+	bsky.Username = os.Getenv("BLUESKY_USER")
+	bsky.Password = os.Getenv("BLUESKY_PASS")
 
-	if username == "" || password == "" {
+	if bsky.Username == "" || bsky.Password == "" {
 		fmt.Println("Missing environment variables. Please set BLUESKY_USER and BLUESKY_PASS.")
 		os.Exit(1)
 	}
 
 	// Authenticate with Bluesky API
-	session, err := bsky.Authenticate(username, password)
+	session, err := bsky.Authenticate(bsky.Username, bsky.Password)
 	if err != nil {
 		fmt.Println("Authentication error:", err)
 		return
@@ -52,19 +67,17 @@ func main() {
 
 		for _, notif := range notifications {
 			// Process only "mention" notifications
-			if notif.Reason == "mention" && bsky.ShouldRespond(notif) && !bsky.HasResponded(notif.Uri) {
-				fmt.Printf("Mention detected: %s\n", notif.Record.Text)
 
-				// Respond to the mention
-				replyText := "Ping!"
-				responseUri, err := bsky.ReplyToMention(session.AccessJwt, notif, replyText, session.Did)
-				if err != nil {
-					fmt.Println("Error responding to mention:", err)
-				} else {
-					fmt.Printf("Responded to mention: %s\n", notif.Record.Text)
-					bsky.RecordResponse(notif.Uri)    // Record the original mention
-					bsky.RecordResponse(responseUri) // Record the reply
-				}
+			isPostACommand, postComponents := bacalhau.CheckPostIsCommand(notif.Record.Text, bsky.Username)
+
+			if notif.Reason == "mention" && bsky.ShouldRespond(notif) && !bsky.HasResponded(notif.Uri) && isPostACommand {
+				fmt.Printf("Command detected: %s\n", notif.Record.Text)
+
+				go dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
+
+				fmt.Printf("Responded to mention: %s\n", notif.Record.Text)
+				bsky.RecordResponse(notif.Uri)    // Record the original mention
+
 			}
 		}
 

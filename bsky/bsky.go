@@ -1,16 +1,15 @@
 package bsky
 
-import(
-	"os"
-	"fmt"
-	"strings"
-	"time"
-	"bytes"
+import (
 	"bufio"
-
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
+	"strings"
+	"time"
 )
 
 type Session struct {
@@ -36,10 +35,34 @@ type Author struct {
 }
 
 type Record struct {
-	Text      string `json:"text,omitempty"`
-	CreatedAt string `json:"createdAt"`
+	Text      string  `json:"text,omitempty"`
+	CreatedAt string  `json:"createdAt"`
+	Facets    []Facet `json:"facets,omitempty"`
 }
 
+type Facet struct {
+	Type     string    `json:"$type"`
+	Index    Index     `json:"index"`
+	Features []Feature `json:"features"`
+}
+
+type Feature struct {
+	Type string `json:"$type"`
+	URI  string `json:"uri,omitempty"` // For #link features
+}
+
+type Index struct {
+	ByteStart int `json:"byteStart"`
+	ByteEnd   int `json:"byteEnd"`
+}
+
+type PostComponents struct {
+	Text string
+	Url string
+}
+
+var Username string
+var Password string
 var blueskyAPIBase = "https://bsky.social/xrpc"
 var StartTime time.Time
 var RespondedFile = "responded_to.txt"
@@ -108,7 +131,13 @@ func FetchNotifications(jwt string) ([]Notification, error) {
 		return nil, err
 	}
 
-	return notificationResponse.Notifications, nil
+	// Print raw response for debugging
+	// fmt.Println("Raw:", string(respBody))
+
+	// Process notifications to update record text based on facets
+	processedNotifications := ProcessNotificationText(notificationResponse.Notifications)
+
+	return processedNotifications, nil
 }
 
 func ReplyToMention(jwt string, notif Notification, text string, userDid string) (string, error) {
@@ -169,29 +198,43 @@ func ReplyToMention(jwt string, notif Notification, text string, userDid string)
 	}
 
 	return "", fmt.Errorf("response URI not found")
+}
 
+func ProcessNotificationText(notifications []Notification) []Notification {
+	for i, notif := range notifications {
+		// Check if the record has facets
+		if notif.Record.Text != "" && notif.Record.Facets != nil {
+			for _, facet := range notif.Record.Facets {
+				// Check for a #link feature
+				for _, feature := range facet.Features {
+					if feature.Type == "app.bsky.richtext.facet#link" {
+						// Replace the text in the record using the facet's URI
+						start := facet.Index.ByteStart
+						end := facet.Index.ByteEnd
+
+						// Replace the substring in text with the link's URI
+						notif.Record.Text = notif.Record.Text[:start] + feature.URI + notif.Record.Text[end:]
+					}
+				}
+			}
+		}
+		// Update the notification in the list
+		notifications[i] = notif
+	}
+	return notifications
 }
 
 func ShouldRespond(notif Notification) bool {
-
-	fmt.Println("Checking whether we should respond based on time:", notif)
-
 	postTime, err := time.Parse(time.RFC3339, notif.Record.CreatedAt)
 	if err != nil {
 		fmt.Printf("Error parsing timestamp for notification URI %s: %v\n", notif.Uri, err)
 		return false
 	}
 
-	fmt.Println("\t", postTime.After(StartTime), "\n")
-
 	return postTime.After(StartTime)
-
 }
 
 func HasResponded(postUri string) bool {
-	
-	fmt.Println("Checking whether we have responded already:", postUri)
-
 	file, err := os.Open(RespondedFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -211,10 +254,7 @@ func HasResponded(postUri string) bool {
 		}
 	}
 
-	fmt.Println("\t", haveWeResponded, "\n")	
-
 	return haveWeResponded
-
 }
 
 func RecordResponse(postUri string) {
