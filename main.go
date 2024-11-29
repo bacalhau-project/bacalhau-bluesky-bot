@@ -15,11 +15,11 @@ import (
 )
 
 var (
-	blueskyAPIBase   = "https://bsky.social/xrpc"
-	username         = ""
-	password         = ""
-	targetUserHandle = ""
-	respondedFile    = "responded_to.txt"
+	blueskyAPIBase = "https://bsky.social/xrpc"
+	username       = ""
+	password       = ""
+	respondedFile  = "responded_to.txt"
+	startTime      time.Time
 )
 
 type Session struct {
@@ -27,44 +27,26 @@ type Session struct {
 	Did       string `json:"did"`
 }
 
-type TimelineResponse struct {
-	Feed []FeedItem `json:"feed"`
+type NotificationResponse struct {
+	Notifications []Notification `json:"notifications"`
 }
 
-type FeedItem struct {
-	Post Post `json:"post"`
-}
-
-type Post struct {
-	Uri         string  `json:"uri"`
-	Cid         string  `json:"cid"`
-	Author      Author  `json:"author"`
-	Record      Record  `json:"record"`
-	ReplyCount  int     `json:"replyCount"`
-	RepostCount int     `json:"repostCount"`
-	LikeCount   int     `json:"likeCount"`
-	IndexedAt   string  `json:"indexedAt"`
-	Labels      []Label `json:"labels,omitempty"`
+type Notification struct {
+	Uri      string `json:"uri"`
+	Cid      string `json:"cid"`
+	Author   Author `json:"author"`
+	Reason   string `json:"reason"`
+	Record   Record `json:"record"`
+	IndexedAt string `json:"indexedAt"`
 }
 
 type Author struct {
-	Did         string `json:"did"`
-	Handle      string `json:"handle"`
-	DisplayName string `json:"displayName,omitempty"`
-	Avatar      string `json:"avatar,omitempty"`
-	CreatedAt   string `json:"createdAt"`
+	Handle string `json:"handle"`
 }
 
 type Record struct {
-	Type      string   `json:"$type"`
-	CreatedAt string   `json:"createdAt"`
-	Langs     []string `json:"langs"`
-	Text      string   `json:"text,omitempty"`
-}
-
-type Label struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Text      string `json:"text,omitempty"`
+	CreatedAt string `json:"createdAt"`
 }
 
 func main() {
@@ -76,10 +58,9 @@ func main() {
 
 	username = os.Getenv("BLUESKY_USER")
 	password = os.Getenv("BLUESKY_PASS")
-	targetUserHandle = os.Getenv("BLUESKY_TARGET_ACCOUNT")
 
-	if username == "" || password == "" || targetUserHandle == "" {
-		fmt.Println("Missing environment variables. Please set BLUESKY_USER, BLUESKY_PASS, and BLUESKY_TARGET_ACCOUNT.")
+	if username == "" || password == "" {
+		fmt.Println("Missing environment variables. Please set BLUESKY_USER and BLUESKY_PASS.")
 		os.Exit(1)
 	}
 
@@ -90,33 +71,32 @@ func main() {
 		return
 	}
 
-	// Track the start time of the program
-	startTime := time.Now()
+	startTime = time.Now()
 
-	// Start polling for new posts
+	// Poll notifications every 10 seconds
 	for {
-		fmt.Printf("Getting posts for %s...\n", targetUserHandle)
-		feedItems, err := fetchTimeline(session.AccessJwt, session.Did)
+		fmt.Println("Fetching notifications...")
+		notifications, err := fetchNotifications(session.AccessJwt)
 		if err != nil {
-			fmt.Println("Error fetching timeline:", err)
+			fmt.Println("Error fetching notifications:", err)
 			time.Sleep(10 * time.Second)
 			continue
 		}
 
-		for _, item := range feedItems {
-			post := item.Post
+		for _, notif := range notifications {
+			// Process only "mention" notifications
+			if notif.Reason == "mention" && shouldRespond(notif) && !hasResponded(notif.Uri) {
+				fmt.Printf("Mention detected: %s\n", notif.Record.Text)
 
-			// Check if post mentions the target account, has not been responded to, and isn't authored by this script
-			if shouldRespond(post, startTime) && !hasResponded(post.Uri) {
-				fmt.Println("Responding to post", post)
-				replyText := fmt.Sprintf("Hi, %s, you mentioned @%s: %s", post.Author.Handle, targetUserHandle, post.Record.Text)
-				responseUri, err := replyToPost(session.AccessJwt, session.Did, post.Uri, post.Cid, replyText)
+				// Respond to the mention
+				replyText := "General Kenobi..."
+				responseUri, err := replyToMention(session.AccessJwt, notif, replyText, session.Did)
 				if err != nil {
-					fmt.Println("Error replying to post:", err)
+					fmt.Println("Error responding to mention:", err)
 				} else {
-					fmt.Printf("Responded to post: %s\n", post.Record.Text)
-					recordResponse(post.Uri)         // Track the original post
-					recordResponse(responseUri)      // Track the response
+					fmt.Printf("Responded to mention: %s\n", notif.Record.Text)
+					recordResponse(notif.Uri)    // Record the original mention
+					recordResponse(responseUri) // Record the reply
 				}
 			}
 		}
@@ -159,8 +139,8 @@ func authenticate(username, password string) (*Session, error) {
 	return &session, nil
 }
 
-func fetchTimeline(jwt, did string) ([]FeedItem, error) {
-	url := fmt.Sprintf("%s/app.bsky.feed.getAuthorFeed?actor=%s", blueskyAPIBase, did)
+func fetchNotifications(jwt string) ([]Notification, error) {
+	url := fmt.Sprintf("%s/app.bsky.notification.listNotifications", blueskyAPIBase)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -176,7 +156,7 @@ func fetchTimeline(jwt, did string) ([]FeedItem, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch timeline, status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to fetch notifications, status code: %d", resp.StatusCode)
 	}
 
 	respBody, err := ioutil.ReadAll(resp.Body)
@@ -184,34 +164,32 @@ func fetchTimeline(jwt, did string) ([]FeedItem, error) {
 		return nil, err
 	}
 
-	var timeline TimelineResponse
-	if err := json.Unmarshal(respBody, &timeline); err != nil {
-		fmt.Println("Error unmarshalling response:", err)
-		fmt.Println("Raw response:", string(respBody))
+	var notificationResponse NotificationResponse
+	if err := json.Unmarshal(respBody, &notificationResponse); err != nil {
 		return nil, err
 	}
 
-	return timeline.Feed, nil
+	return notificationResponse.Notifications, nil
 }
 
-func replyToPost(jwt, did, postUri, postCid, text string) (string, error) {
+func replyToMention(jwt string, notif Notification, text string, userDid string) (string, error) {
 	url := fmt.Sprintf("%s/com.atproto.repo.createRecord", blueskyAPIBase)
 
 	payload := map[string]interface{}{
 		"collection": "app.bsky.feed.post",
-		"repo":       did,
+		"repo":       userDid, // Use the authenticated user's DID
 		"record": map[string]interface{}{
 			"$type":     "app.bsky.feed.post",
 			"text":      text,
 			"createdAt": time.Now().Format(time.RFC3339),
 			"reply": map[string]interface{}{
 				"root": map[string]string{
-					"uri": postUri,
-					"cid": postCid,
+					"uri": notif.Uri,
+					"cid": notif.Cid,
 				},
 				"parent": map[string]string{
-					"uri": postUri,
-					"cid": postCid,
+					"uri": notif.Uri,
+					"cid": notif.Cid,
 				},
 			},
 		},
@@ -247,7 +225,6 @@ func replyToPost(jwt, did, postUri, postCid, text string) (string, error) {
 		return "", fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	// Extract and return the URI of the created response
 	if uri, ok := response["uri"].(string); ok {
 		return uri, nil
 	}
@@ -255,41 +232,47 @@ func replyToPost(jwt, did, postUri, postCid, text string) (string, error) {
 	return "", fmt.Errorf("response URI not found")
 }
 
-func shouldRespond(post Post, startTime time.Time) bool {
-	if post.Record.CreatedAt == "" {
-		fmt.Println("Skipping post with no CreatedAt field.")
-		return false
-	}
+func shouldRespond(notif Notification) bool {
 
-	postTime, err := time.Parse(time.RFC3339, post.Record.CreatedAt)
+	fmt.Println("Checking whether we should respond based on time:", notif)
+
+	postTime, err := time.Parse(time.RFC3339, notif.Record.CreatedAt)
 	if err != nil {
-		fmt.Printf("Error parsing timestamp for post URI %s: %v\n", post.Uri, err)
+		fmt.Printf("Error parsing timestamp for notification URI %s: %v\n", notif.Uri, err)
 		return false
 	}
 
-	// Check if the post mentions the target user
-	return postTime.After(startTime) && strings.Contains(post.Record.Text, "@"+targetUserHandle)
+	fmt.Println("\t", postTime.After(startTime), "\n")
+
+	return postTime.After(startTime)
 }
 
 func hasResponded(postUri string) bool {
+	
+	fmt.Println("Checking whether we have responded already:", postUri)
+
 	file, err := os.Open(respondedFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false // File doesn't exist, no responses yet
+			return false
 		}
 		fmt.Println("Error opening responded file:", err)
 		return false
 	}
 	defer file.Close()
 
+	haveWeResponded := false
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		if scanner.Text() == postUri {
-			return true
+			haveWeResponded = true
 		}
 	}
 
-	return false
+	fmt.Println("\t", haveWeResponded, "\n")	
+
+	return haveWeResponded
 }
 
 func recordResponse(postUri string) {
