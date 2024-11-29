@@ -22,6 +22,11 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 		return
 	}
 
+	fmt.Println("Dispatching job to Bacalhau...")
+	_ = bacalhau.CreateJob(jobFile)
+
+	return
+
 	// Respond to the mention
 	replyText := "Ping!"
 	responseUri, err := bsky.ReplyToMention(session.AccessJwt, notif, replyText, session.Did)
@@ -45,6 +50,9 @@ func main() {
 		fmt.Println("Missing environment variables. Please set BLUESKY_USER and BLUESKY_PASS.")
 		os.Exit(1)
 	}
+
+	bacalhau.BACALHAU_HOST = os.Getenv("BACALHAU_HOST")
+	fmt.Println(bacalhau.BACALHAU_HOST)
 
 	// Authenticate with Bluesky API
 	session, err := bsky.Authenticate(bsky.Username, bsky.Password)

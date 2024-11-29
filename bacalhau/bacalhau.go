@@ -1,14 +1,21 @@
 package bacalhau
 
 import(
+
 	"fmt"
+	"bytes"
+	"encoding/json"
 	"regexp"
 	"strings"
 	"io/ioutil"
 	"net/http"
-
+	
 	"bbb/bsky"
+
+	"gopkg.in/yaml.v3"
 )
+
+var BACALHAU_HOST string
 
 func GetLinkedJobFile(url string) (string, error) {
 
@@ -32,11 +39,64 @@ func GetLinkedJobFile(url string) (string, error) {
 		return "", fmt.Errorf("failed to read file content: %v", err)
 	}
 
-	// Convert the response body to a string
-	fileContent := string(body)
+	// Parse the YAML content into a generic map
+	var yamlContent map[string]interface{}
+	err = yaml.Unmarshal(body, &yamlContent)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse YAML: %v", err)
+	}
 
-	return fileContent, nil
+	// Nest the parsed YAML map under the "Job" property
+	wrappedContent := map[string]interface{}{
+		"Job": yamlContent,
+	}
 
+	// Convert the wrapped content to JSON
+	jsonContent, err := json.MarshalIndent(wrappedContent, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to convert wrapped content to JSON: %v", err)
+	}
+
+	// Return the formatted JSON string
+	return string(jsonContent), nil
+}
+
+func CreateJob(jobSpec string) error {
+	url := fmt.Sprintf("http://%s/api/v1/orchestrator/jobs", BACALHAU_HOST)
+
+	fmt.Println("Sending job to:", url)
+
+	// Convert the job specification string to a JSON byte slice
+	jsonData := []byte(jobSpec)
+
+	// Create a new HTTP POST request
+	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// Send the request using the default HTTP client
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send HTTP request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check if the request was successful
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to create job, status code: %d", resp.StatusCode)
+	}
+
+	// Optionally, decode the response body to get details about the created job
+	var response map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	fmt.Println("Job created successfully:", response)
+	return nil
 }
 
 func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostComponents) {
