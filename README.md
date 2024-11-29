@@ -25,8 +25,8 @@ BBB is a bot that listens for mentions on [Bluesky](https://bsky.app/), detects 
 
 ### **1. Clone the Repository**
 ```bash
-git clone https://github.com/your-repo/bbb.git
-cd bbb
+git clone https://github.com/seanmtracey/bacalhau-bluesky-bot
+cd bacalhau-bluesky-bot
 ```
 
 ### **2. Install Dependencies**
