@@ -10,7 +10,8 @@ import (
 	"os"
 	"strings"
 	"time"
-
+	
+	"bbb/bsky"
 	"github.com/joho/godotenv"
 )
 
@@ -22,32 +23,7 @@ var (
 	startTime      time.Time
 )
 
-type Session struct {
-	AccessJwt string `json:"accessJwt"`
-	Did       string `json:"did"`
-}
 
-type NotificationResponse struct {
-	Notifications []Notification `json:"notifications"`
-}
-
-type Notification struct {
-	Uri      string `json:"uri"`
-	Cid      string `json:"cid"`
-	Author   Author `json:"author"`
-	Reason   string `json:"reason"`
-	Record   Record `json:"record"`
-	IndexedAt string `json:"indexedAt"`
-}
-
-type Author struct {
-	Handle string `json:"handle"`
-}
-
-type Record struct {
-	Text      string `json:"text,omitempty"`
-	CreatedAt string `json:"createdAt"`
-}
 
 func main() {
 	// Load environment variables
@@ -89,7 +65,7 @@ func main() {
 				fmt.Printf("Mention detected: %s\n", notif.Record.Text)
 
 				// Respond to the mention
-				replyText := "General Kenobi..."
+				replyText := "Ping!"
 				responseUri, err := replyToMention(session.AccessJwt, notif, replyText, session.Did)
 				if err != nil {
 					fmt.Println("Error responding to mention:", err)
@@ -105,7 +81,7 @@ func main() {
 	}
 }
 
-func authenticate(username, password string) (*Session, error) {
+func authenticate(username, password string) (*bsky.Session, error) {
 	url := fmt.Sprintf("%s/com.atproto.server.createSession", blueskyAPIBase)
 	body := fmt.Sprintf(`{"identifier": "%s", "password": "%s"}`, username, password)
 
@@ -131,7 +107,7 @@ func authenticate(username, password string) (*Session, error) {
 		return nil, err
 	}
 
-	var session Session
+	var session bsky.Session
 	if err := json.Unmarshal(respBody, &session); err != nil {
 		return nil, err
 	}
@@ -139,7 +115,7 @@ func authenticate(username, password string) (*Session, error) {
 	return &session, nil
 }
 
-func fetchNotifications(jwt string) ([]Notification, error) {
+func fetchNotifications(jwt string) ([]bsky.Notification, error) {
 	url := fmt.Sprintf("%s/app.bsky.notification.listNotifications", blueskyAPIBase)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -164,7 +140,7 @@ func fetchNotifications(jwt string) ([]Notification, error) {
 		return nil, err
 	}
 
-	var notificationResponse NotificationResponse
+	var notificationResponse bsky.NotificationResponse
 	if err := json.Unmarshal(respBody, &notificationResponse); err != nil {
 		return nil, err
 	}
@@ -172,7 +148,7 @@ func fetchNotifications(jwt string) ([]Notification, error) {
 	return notificationResponse.Notifications, nil
 }
 
-func replyToMention(jwt string, notif Notification, text string, userDid string) (string, error) {
+func replyToMention(jwt string, notif bsky.Notification, text string, userDid string) (string, error) {
 	url := fmt.Sprintf("%s/com.atproto.repo.createRecord", blueskyAPIBase)
 
 	payload := map[string]interface{}{
@@ -232,7 +208,7 @@ func replyToMention(jwt string, notif Notification, text string, userDid string)
 	return "", fmt.Errorf("response URI not found")
 }
 
-func shouldRespond(notif Notification) bool {
+func shouldRespond(notif bsky.Notification) bool {
 
 	fmt.Println("Checking whether we should respond based on time:", notif)
 
