@@ -143,23 +143,21 @@ func FetchNotifications(jwt string) ([]Notification, error) {
 func ReplyToMention(jwt string, notif Notification, text string, userDid string) (string, error) {
 	url := fmt.Sprintf("%s/com.atproto.repo.createRecord", blueskyAPIBase)
 
-	// Find the byte positions of the URL in the text
-	urlStart := strings.Index(text, "https://docs.bacalhau.org")
-	if urlStart == -1 {
-		return "", fmt.Errorf("URL not found in the reply text")
-	}
-
-	// Find the first space after the URL to calculate urlEnd
-	urlEnd := strings.Index(text[urlStart:], " ")
-	if urlEnd == -1 {
-		urlEnd = len(text) // If no space is found, assume the URL goes to the end of the text
-	} else {
-		urlEnd += urlStart // Adjust relative index to absolute
-	}
-
-	// Define the facet for the URL
+	// Initialize facets as nil
 	var facets []map[string]interface{}
+
+	// Find the byte positions of the URL in the text (if any)
+	urlStart := strings.Index(text, "https://")
 	if urlStart != -1 {
+		// Find the first space after the URL to calculate urlEnd
+		urlEnd := strings.Index(text[urlStart:], " ")
+		if urlEnd == -1 {
+			urlEnd = len(text) // If no space is found, assume the URL goes to the end of the text
+		} else {
+			urlEnd += urlStart // Adjust relative index to absolute
+		}
+
+		// Define the facet for the URL
 		facets = append(facets, map[string]interface{}{
 			"index": map[string]int{
 				"byteStart": urlStart,
@@ -174,14 +172,13 @@ func ReplyToMention(jwt string, notif Notification, text string, userDid string)
 		})
 	}
 
-	// Construct the payload with facets
+	// Construct the payload with optional facets
 	payload := map[string]interface{}{
 		"collection": "app.bsky.feed.post",
 		"repo":       userDid, // Use the authenticated user's DID
 		"record": map[string]interface{}{
 			"$type":     "app.bsky.feed.post",
 			"text":      text,
-			"facets":    facets, // Include facets in the record
 			"createdAt": time.Now().Format(time.RFC3339),
 			"reply": map[string]interface{}{
 				"root": map[string]string{
@@ -194,6 +191,11 @@ func ReplyToMention(jwt string, notif Notification, text string, userDid string)
 				},
 			},
 		},
+	}
+
+	// Add facets only if they are defined
+	if facets != nil {
+		payload["record"].(map[string]interface{})["facets"] = facets
 	}
 
 	body, err := json.Marshal(payload)
@@ -232,6 +234,7 @@ func ReplyToMention(jwt string, notif Notification, text string, userDid string)
 
 	return "", fmt.Errorf("response URI not found")
 }
+
 
 
 func ProcessNotificationText(notifications []Notification) []Notification {

@@ -68,41 +68,44 @@ func GetLinkedJobFile(url string) (string, error) {
 	return string(jsonContent), nil
 }
 
-func CreateJob(jobSpec string) (*JobExecutionResult, error) {
-	// Endpoint to submit the job
+func CreateJob(jobSpec string) JobExecutionResult {
 	url := fmt.Sprintf("http://%s/api/v1/orchestrator/jobs", BACALHAU_HOST)
-
 	fmt.Println("Sending job to:", url)
 
 	// Convert the job specification string to a JSON byte slice
 	jsonData := []byte(jobSpec)
 
-	// Create a new HTTP POST request
 	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %v", err)
+		fmt.Printf("Error creating HTTP request: %v\n", err)
+		return JobExecutionResult{}
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	// Send the request using the default HTTP client
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send HTTP request: %v", err)
+		fmt.Printf("Error sending HTTP request: %v\n", err)
+		return JobExecutionResult{}
 	}
 	defer resp.Body.Close()
 
-	// Check if the request was successful
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to create job, status code: %d", resp.StatusCode)
+		fmt.Printf("Failed to create job, status code: %d\n", resp.StatusCode)
+		return JobExecutionResult{}
 	}
 
-	// Decode the response body to get the job details
 	var response struct {
 		JobID string `json:"JobID"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		fmt.Printf("Error decoding job creation response: %v\n", err)
+		return JobExecutionResult{}
+	}
+
+	if response.JobID == "" {
+		fmt.Println("Job creation response missing JobID.")
+		return JobExecutionResult{}
 	}
 
 	fmt.Printf("Job created successfully with ID: %s\n", response.JobID)
@@ -111,51 +114,51 @@ func CreateJob(jobSpec string) (*JobExecutionResult, error) {
 	fmt.Println("Waiting for 20 seconds before querying executions...")
 	time.Sleep(20 * time.Second)
 
-	// Query the executions endpoint
 	executionsURL := fmt.Sprintf("http://%s/api/v1/orchestrator/jobs/%s/executions", BACALHAU_HOST, response.JobID)
 	req, err = http.NewRequest("GET", executionsURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request for executions: %v", err)
+		fmt.Printf("Error creating request for executions: %v\n", err)
+		return JobExecutionResult{}
 	}
 
 	resp, err = client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch executions: %v", err)
+		fmt.Printf("Error fetching executions: %v\n", err)
+		return JobExecutionResult{}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch executions, status code: %d", resp.StatusCode)
+		fmt.Printf("Failed to fetch executions, status code: %d\n", resp.StatusCode)
+		return JobExecutionResult{}
 	}
 
-	// Decode the executions response
 	var executionsResponse struct {
 		Items []struct {
-			ID         string `json:"ID"`
-			RunOutput  struct {
+			ID        string `json:"ID"`
+			RunOutput struct {
 				Stdout string `json:"Stdout"`
 			} `json:"RunOutput"`
 		} `json:"Items"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&executionsResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode executions response: %v", err)
+		fmt.Printf("Error decoding executions response: %v\n", err)
+		return JobExecutionResult{}
 	}
 
-	// Extract the first execution result
 	if len(executionsResponse.Items) == 0 {
-		return nil, fmt.Errorf("no executions found for JobID: %s", response.JobID)
+		fmt.Printf("No executions found for JobID: %s\n", response.JobID)
+		return JobExecutionResult{}
 	}
-	firstExecution := executionsResponse.Items[0]
 
-	// Populate the result struct
-	result := &JobExecutionResult{
+	firstExecution := executionsResponse.Items[0]
+	return JobExecutionResult{
 		JobID:       response.JobID,
 		ExecutionID: firstExecution.ID,
 		Stdout:      firstExecution.RunOutput.Stdout,
 	}
-
-	return result, nil
 }
+
 
 func StopJob(jobID, reason string, wait bool) (string, error) {
 
