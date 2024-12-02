@@ -55,13 +55,20 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 	// Step 5: Determine the reply text based on ExecutionID and Stdout
 	var replyText string
 	if result.ExecutionID != "" && result.Stdout != "" {
+
+		var jobResultContent = result.Stdout
+
+		if len(jobResultContent) > 100 {
+			jobResultContent = jobResultContent[:100] + "..." // Truncate and add ellipsis
+		}	
+
 		// Successful execution
 		replyText = fmt.Sprintf(
 			"Your Bacalhau Job executed successfully 🥳🐟\n\n"+
-				"Job ID: %s\nExecution ID: %s\nOutput: %s\n"+
-				"🐟🐟🐟🐟🐟\n\n"+
-				"Explore more with Bacalhau! Check out our docs at https://docs.bacalhau.org",
-			result.JobID, result.ExecutionID, result.Stdout,
+			"Job ID: %s\nExecution ID: %s\nOutput: %s\n"+
+			"🐟🐟🐟🐟🐟\n\n"+
+			"Explore more with Bacalhau! Check out our docs at https://docs.bacalhau.org",
+			result.JobID, result.ExecutionID, jobResultContent,
 		)
 		fmt.Println("Execution successful. Reply prepared:", replyText)
 	} else {
