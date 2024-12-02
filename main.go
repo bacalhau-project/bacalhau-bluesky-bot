@@ -134,6 +134,7 @@ func main() {
 		if err != nil {
 			fmt.Println("Error fetching notifications:", err)
 			time.Sleep(10 * time.Second)
+			os.Exit(1)
 			continue
 		}
 
