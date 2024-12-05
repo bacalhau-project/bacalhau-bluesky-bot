@@ -58,8 +58,8 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 
 		var jobResultContent = result.Stdout
 
-		if len(jobResultContent) > 100 {
-			jobResultContent = jobResultContent[:100] + "..." // Truncate and add ellipsis
+		if len(jobResultContent) > 55 {
+			jobResultContent = jobResultContent[:55] + "..." // Truncate and add ellipsis
 		}	
 
 		// Successful execution
