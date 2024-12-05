@@ -3,6 +3,7 @@ package bsky
 import (
 	"bufio"
 	"bytes"
+	"regexp"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -143,30 +144,26 @@ func FetchNotifications(jwt string) ([]Notification, error) {
 func ReplyToMention(jwt string, notif Notification, text string, userDid string) (string, error) {
 	url := fmt.Sprintf("%s/com.atproto.repo.createRecord", blueskyAPIBase)
 
-	// Initialize facets as nil
+	// Initialize facets as an empty slice
 	var facets []map[string]interface{}
 
-	// Find the byte positions of the URL in the text (if any)
-	urlStart := strings.Index(text, "https://")
-	if urlStart != -1 {
-		// Find the first space after the URL to calculate urlEnd
-		urlEnd := strings.Index(text[urlStart:], " ")
-		if urlEnd == -1 {
-			urlEnd = len(text) // If no space is found, assume the URL goes to the end of the text
-		} else {
-			urlEnd += urlStart // Adjust relative index to absolute
-		}
+	// Use a regex to find all URLs in the text
+	urlRegex := `https?://[^\s]+`
+	re := regexp.MustCompile(urlRegex)
+	matches := re.FindAllStringIndex(text, -1)
 
-		// Define the facet for the URL
+	// Create a facet for each URL
+	for _, match := range matches {
+		byteStart, byteEnd := match[0], match[1]
 		facets = append(facets, map[string]interface{}{
 			"index": map[string]int{
-				"byteStart": urlStart,
-				"byteEnd":   urlEnd,
+				"byteStart": byteStart,
+				"byteEnd":   byteEnd,
 			},
 			"features": []map[string]string{
 				{
 					"$type": "app.bsky.richtext.facet#link",
-					"uri":   text[urlStart:urlEnd],
+					"uri":   text[byteStart:byteEnd],
 				},
 			},
 		})
@@ -193,8 +190,8 @@ func ReplyToMention(jwt string, notif Notification, text string, userDid string)
 		},
 	}
 
-	// Add facets only if they are defined
-	if facets != nil {
+	// Add facets only if they exist
+	if len(facets) > 0 {
 		payload["record"].(map[string]interface{})["facets"] = facets
 	}
 
@@ -234,7 +231,6 @@ func ReplyToMention(jwt string, notif Notification, text string, userDid string)
 
 	return "", fmt.Errorf("response URI not found")
 }
-
 
 
 func ProcessNotificationText(notifications []Notification) []Notification {
