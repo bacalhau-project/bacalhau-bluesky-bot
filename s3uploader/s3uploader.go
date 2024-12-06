@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	// "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 type S3Uploader struct {
@@ -41,7 +41,7 @@ func (u *S3Uploader) UploadFile(objectKey string, content []byte, contentType st
 		Key:         aws.String(objectKey),
 		Body:        bytes.NewReader(content),
 		ContentType: aws.String(contentType),
-		ACL:         types.ObjectCannedACLPublicRead, // Makes the object publicly accessible
+		// ACL:         types.ObjectCannedACLPublicRead, // Makes the object publicly accessible
 	}
 
 	// Upload the object
