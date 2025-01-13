@@ -8,6 +8,7 @@ import (
 	"bbb/bsky"
 	"bbb/bacalhau"
 	"bbb/s3uploader"
+	"bbb/gancho"
 	"github.com/joho/godotenv"
 )
 
@@ -92,13 +93,19 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 			os.Exit(1)
 		}
 
+		shortlink, slErr := gancho.GenerateShortURL(publicURL)
+
+		if slErr != nil {
+			shortlink = publicURL
+		}
+
 		// Successful execution
 		replyText = fmt.Sprintf(
 			"Your Bacalhau Job executed successfully 🥳🐟\n\n"+
 			"Job ID: %s\nExecution ID: %s\nOutput: %s\n"+
 			"🐟🐟🐟🐟🐟\n\n"+
 			"Explore more with Bacalhau! Check out our docs at https://docs.bacalhau.org",
-			result.JobID, result.ExecutionID, publicURL,
+			result.JobID, result.ExecutionID, shortlink,
 		)
 		
 		fmt.Println("Execution successful. Reply prepared:", replyText)
