@@ -7,8 +7,36 @@ import (
 	
 	"bbb/bsky"
 	"bbb/bacalhau"
+	"bbb/s3uploader"
+	"bbb/gancho"
 	"github.com/joho/godotenv"
 )
+
+func uploadResultAndGetPublicURL(key, result string) (string, error) {
+
+	bucketName := os.Getenv("RESULTS_BUCKET")
+	uploader, err := s3uploader.NewS3Uploader(bucketName)
+
+	if err != nil {
+		fmt.Printf("Failed to initialize S3Uploader: %v", err)
+		return "", err
+	}
+
+	objectKey := key + ".txt"
+	content := []byte(result)
+	contentType := "text/plain"
+
+	publicURL, err := uploader.UploadFile(objectKey, content, contentType)
+	if err != nil {
+		fmt.Printf("Failed to upload file: %v", err)
+		return "", err
+	}
+
+	fmt.Printf("File uploaded successfully! Public publicURL: %s\n", publicURL)
+
+	return publicURL, nil
+
+}
 
 func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notification, jobFileLink string) {
 	// Log start of the function
@@ -58,9 +86,18 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 
 		var jobResultContent = result.Stdout
 
-		if len(jobResultContent) > 55 {
-			jobResultContent = jobResultContent[:55] + "..." // Truncate and add ellipsis
-		}	
+		publicURL, uploadErr := uploadResultAndGetPublicURL(result.ExecutionID, jobResultContent)
+
+		if uploadErr != nil {
+			fmt.Println("Could not upload file to S3:", uploadErr)
+			os.Exit(1)
+		}
+
+		shortlink, slErr := gancho.GenerateShortURL(publicURL)
+
+		if slErr != nil {
+			shortlink = publicURL
+		}
 
 		// Successful execution
 		replyText = fmt.Sprintf(
@@ -68,10 +105,13 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 			"Job ID: %s\nExecution ID: %s\nOutput: %s\n"+
 			"🐟🐟🐟🐟🐟\n\n"+
 			"Explore more with Bacalhau! Check out our docs at https://docs.bacalhau.org",
-			result.JobID, result.ExecutionID, jobResultContent,
+			result.JobID, result.ExecutionID, shortlink,
 		)
+		
 		fmt.Println("Execution successful. Reply prepared:", replyText)
+
 	} else {
+		
 		// Execution is incomplete or failed
 		replyText = fmt.Sprintf(
 			"Sorry! No results for your Bacalhau Job yet.\n\n"+
@@ -88,6 +128,7 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 			go bacalhau.StopJob(result.JobID, "The job ran too long for the Bacalhau Bot to tolerate.", true)
 			// bacalhau.StopJob(result.JobID, "The job ran too long for the Bacalhau Bot to tolerate.", true)
 		}
+		
 	}
 
 	// Step 6: Send the reply
