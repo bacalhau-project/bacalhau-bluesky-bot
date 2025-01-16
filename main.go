@@ -219,6 +219,9 @@ func main() {
 			if notif.Reason == "mention" && bsky.ShouldRespond(notif) && !bsky.HasResponded(notif.Uri) && isPostACommand {
 				fmt.Printf("Command detected: %s\n", notif.Record.Text)
 
+				acknowledgeJobRequest := "We got your job and we're running it now!\n\nYou should get results in a few seconds while we let it run, so hold tight and check your notifications!"
+
+				sendReply(session, notif, acknowledgeJobRequest)
 				go dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
 				// dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
 
