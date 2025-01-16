@@ -103,7 +103,7 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 		// Successful execution
 		replyText = fmt.Sprintf(
 			"Your Bacalhau Job executed successfully 🥳🐟\n\n"+
-			"Job ID: %s\nExecution ID: %s\nOutput: %s\n"+
+			"Job ID: %s\nExecution ID: %s\nOutput: %s\n\n"+
 			"🐟🐟🐟🐟🐟\n\n"+
 			"Explore more with Bacalhau! Check out our docs at https://docs.bacalhau.org",
 			result.JobID, result.ExecutionID, shortlink,
