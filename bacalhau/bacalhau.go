@@ -215,16 +215,16 @@ func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostCom
 	var commandType string	
 	// Define the regex pattern to validate the command structure
 
-	pattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+job\s+run\s+https?://\S+$`
+	jobRunPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+job\s+run\s+https?://\S+$`
 
 	// Compile the regex
-	re := regexp.MustCompile(pattern)
+	jobRunRegex := regexp.MustCompile(jobRunPattern)
 
-	isCommand := re.MatchString(post)
+	isJobRunCommand := jobRunRegex.MatchString(post)
 
 	components := bsky.PostComponents{}
 
-	if isCommand {
+	if isJobRunCommand {
 		// Split the post string into parts
 		parts := strings.Fields(post)
 
@@ -238,5 +238,5 @@ func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostCom
 	}
 
 	// Check if the post matches the pattern
-	return isCommand, components, commandType
+	return isJobRunCommand, components, commandType
 }

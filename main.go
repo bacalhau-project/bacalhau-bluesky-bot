@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"os"
 	"net/http"
-	
+	"errors"
+
 	"bbb/bsky"
 	"bbb/bacalhau"
 	"bbb/s3uploader"
@@ -36,6 +37,10 @@ func uploadResultAndGetPublicURL(key, result string) (string, error) {
 	fmt.Printf("File uploaded successfully! Public publicURL: %s\n", publicURL)
 
 	return publicURL, nil
+
+}
+
+func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Notification, jobFileLink string) {
 
 }
 
@@ -143,12 +148,24 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 // Helper to send replies
 func sendReply(session *bsky.Session, notif bsky.Notification, replyText string) {
 	fmt.Println("Preparing to send reply...")
-	responseUri, err := bsky.ReplyToMention(session.AccessJwt, notif, replyText, session.Did)
-	if err != nil {
-		fmt.Println("Error responding to mention:", err)
-		return
+
+	responseUri, err := "", errors.New("")
+
+	if os.Getenv("DRY_RUN") != "true"{
+
+		responseUri, err = bsky.ReplyToMention(session.AccessJwt, notif, replyText, session.Did)
+		if err != nil {
+			fmt.Println("Error responding to mention:", err)
+			return
+		}
+
+		
+	} else {
+		responseUri = "DRY_RUN_URI"
 	}
+	
 	fmt.Println("Reply sent successfully. Response URI:", responseUri)
+
 	bsky.RecordResponse(responseUri)
 }
 
@@ -229,6 +246,10 @@ func main() {
 
 				if commandType == "job_file" {
 					go dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
+				}
+
+				if commandType == "classify" {
+					go dispatchClassificationJobAndPostReply(session, notif, postComponents.Url)
 				}
 
 				// dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
