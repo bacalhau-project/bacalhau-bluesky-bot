@@ -4,6 +4,7 @@ import (
 	"time"
 	"fmt"
 	"os"
+	"net/http"
 	
 	"bbb/bsky"
 	"bbb/bacalhau"
@@ -147,6 +148,28 @@ func sendReply(session *bsky.Session, notif bsky.Notification, replyText string)
 	bsky.RecordResponse(responseUri)
 }
 
+func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
+	// Respond with 200 OK and an empty body
+	w.WriteHeader(http.StatusOK)
+}
+
+func startHTTPServer() {
+	
+	http.HandleFunc("/__gtg", healthCheckHandler)
+
+	port := ":8080" // Default port
+	if envPort := os.Getenv("PORT"); envPort != "" {
+		port = ":" + envPort
+	}
+
+	fmt.Printf("Starting HTTP server on port %s\n", port)
+	go func() {
+		if err := http.ListenAndServe(port, nil); err != nil {
+			fmt.Printf("HTTP server failed: %v\n", err)
+		}
+	}()
+
+}
 
 func main() {
 	// Load environment variables
@@ -164,7 +187,7 @@ func main() {
 	}
 
 	bacalhau.BACALHAU_HOST = os.Getenv("BACALHAU_HOST")
-	fmt.Println(bacalhau.BACALHAU_HOST)
+	fmt.Printf("Bacalhau Orchestrator Node IP: %s\n", bacalhau.BACALHAU_HOST)
 
 	// Authenticate with Bluesky API
 	session, err := bsky.Authenticate(bsky.Username, bsky.Password)
@@ -172,6 +195,8 @@ func main() {
 		fmt.Println("Authentication error:", err)
 		return
 	}
+
+	startHTTPServer()
 
 	bsky.StartTime = time.Now()
 
