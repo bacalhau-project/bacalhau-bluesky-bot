@@ -1,6 +1,6 @@
 module bbb
 
-go 1.22
+go 1.18
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.32.6
