@@ -23,28 +23,50 @@ type NotificationResponse struct {
 }
 
 type Notification struct {
-	Uri      string `json:"uri"`
-	Cid      string `json:"cid"`
-	Author   Author `json:"author"`
-	Reason   string `json:"reason"`
-	Record   Record `json:"record"`
+	Uri       string `json:"uri"`
+	Cid       string `json:"cid"`
+	Author    Author `json:"author"`
+	Reason    string `json:"reason"`
+	Record    Record `json:"record"`
 	IndexedAt string `json:"indexedAt"`
+	ImageURL  string `json:"imageURL"`
 }
 
 type Author struct {
 	Handle string `json:"handle"`
+	Did    string `json:"did"`
 }
 
 type Record struct {
 	Text      string  `json:"text,omitempty"`
 	CreatedAt string  `json:"createdAt"`
 	Facets    []Facet `json:"facets,omitempty"`
+	Embed     *Embed  `json:"embed,omitempty"` // Change from []Embed to *Embed
 }
 
 type Facet struct {
 	Type     string    `json:"$type"`
 	Index    Index     `json:"index"`
 	Features []Feature `json:"features"`
+}
+
+type Embed struct {
+	Type   string  `json:"$type"`
+	Images []Image `json:"images,omitempty"`
+}
+
+type Image struct {
+	Alt         string   `json:"alt"`
+	AspectRatio struct {
+		Height int `json:"height"`
+		Width  int `json:"width"`
+	} `json:"aspectRatio"`
+	Image struct {
+		Type     string            `json:"$type"`
+		Ref      map[string]string `json:"ref"`
+		MimeType string            `json:"mimeType"`
+		Size     int               `json:"size"`
+	} `json:"image"`
 }
 
 type Feature struct {
@@ -136,7 +158,7 @@ func FetchNotifications(jwt string) ([]Notification, error) {
 	// fmt.Println("Raw:", string(respBody))
 
 	// Process notifications to update record text based on facets
-	processedNotifications := ProcessNotificationText(notificationResponse.Notifications)
+	processedNotifications := ProcessNotifications(notificationResponse.Notifications)
 
 	return processedNotifications, nil
 }
@@ -233,28 +255,60 @@ func ReplyToMention(jwt string, notif Notification, text string, userDid string)
 }
 
 
-func ProcessNotificationText(notifications []Notification) []Notification {
+func ProcessNotifications(notifications []Notification) []Notification {
+	
 	for i, notif := range notifications {
-		// Check if the record has facets
+
 		if notif.Record.Text != "" && notif.Record.Facets != nil {
+
 			for _, facet := range notif.Record.Facets {
-				// Check for a #link feature
+
 				for _, feature := range facet.Features {
+
 					if feature.Type == "app.bsky.richtext.facet#link" {
-						// Replace the text in the record using the facet's URI
 						start := facet.Index.ByteStart
 						end := facet.Index.ByteEnd
 
 						// Replace the substring in text with the link's URI
 						notif.Record.Text = notif.Record.Text[:start] + feature.URI + notif.Record.Text[end:]
 					}
+
 				}
+
 			}
+
 		}
+
+		if notif.Record.Embed != nil && notif.Record.Embed.Type == "app.bsky.embed.images" {
+
+			if len(notif.Record.Embed.Images) > 0 {
+
+				firstImage := notif.Record.Embed.Images[0] // Access the first image
+				imageRef := firstImage.Image.Ref["$link"]
+
+				// Construct the image URL
+				imageURL := fmt.Sprintf(
+					"https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg",
+					notif.Author.Did,
+					imageRef,
+				)
+
+				// Add the generated image URL to the notification
+				notif.ImageURL = imageURL
+
+				// Log the generated image URL for debugging
+				fmt.Printf("Image URL generated: %s\n", imageURL)
+
+			}
+
+		}
+
 		// Update the notification in the list
 		notifications[i] = notif
 	}
+
 	return notifications
+
 }
 
 func ShouldRespond(notif Notification) bool {

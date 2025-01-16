@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"net/http"
-	"errors"
 
 	"bbb/bsky"
 	"bbb/bacalhau"
@@ -149,7 +148,8 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 func sendReply(session *bsky.Session, notif bsky.Notification, replyText string) {
 	fmt.Println("Preparing to send reply...")
 
-	responseUri, err := "", errors.New("")
+	var responseUri string
+	var err error
 
 	if os.Getenv("DRY_RUN") != "true"{
 
@@ -158,7 +158,6 @@ func sendReply(session *bsky.Session, notif bsky.Notification, replyText string)
 			fmt.Println("Error responding to mention:", err)
 			return
 		}
-
 		
 	} else {
 		responseUri = "DRY_RUN_URI"
@@ -224,7 +223,9 @@ func main() {
 	// Poll notifications every 10 seconds
 	for {
 		fmt.Println("Fetching notifications...")
+
 		notifications, err := bsky.FetchNotifications(session.AccessJwt)
+		
 		if err != nil {
 			fmt.Println("Error fetching notifications:", err)
 			time.Sleep(10 * time.Second)
