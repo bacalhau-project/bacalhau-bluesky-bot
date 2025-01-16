@@ -3,6 +3,6 @@ runtime: go1
 build:
   commands:
     build:
-      - go build ./
+      - go build -o bbb
 run:
   command: ./bbb
