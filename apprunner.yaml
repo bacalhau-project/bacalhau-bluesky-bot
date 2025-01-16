@@ -5,4 +5,5 @@ build:
     build:
       - go build -o bbb
 run:
+  runtime-version: 1.22.2
   command: ./bbb
