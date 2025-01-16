@@ -48,6 +48,10 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 	jobFile, jobFileErr := bacalhau.GetLinkedJobFile(jobFileLink)
 	if jobFileErr != nil {
 		fmt.Println("Could not get job file to dispatch job:", jobFileErr)
+
+		jobRetrievalErrTxt := fmt.Sprintf("Sorry! Something went wrong when trying to get your Job file 😔\n\nThe error that came back was %s\n\nPlease check your Job file and try again!", jobFileErr)
+
+		sendReply(session, notif, jobRetrievalErrTxt)
 		return
 	}
 
@@ -214,16 +218,23 @@ func main() {
 		for _, notif := range notifications {
 			// Process only "mention" notifications
 
-			isPostACommand, postComponents := bacalhau.CheckPostIsCommand(notif.Record.Text, bsky.Username)
+			isPostACommand, postComponents, commandType := bacalhau.CheckPostIsCommand(notif.Record.Text, bsky.Username)
 
 			if notif.Reason == "mention" && bsky.ShouldRespond(notif) && !bsky.HasResponded(notif.Uri) && isPostACommand {
 				fmt.Printf("Command detected: %s\n", notif.Record.Text)
 
-				go dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
+				acknowledgeJobRequest := "We got your job and we're running it now!\n\nYou should get results in a few seconds while we let it run, so hold tight and check your notifications!"
+
+				go sendReply(session, notif, acknowledgeJobRequest)
+
+				if commandType == "job_file" {
+					go dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
+				}
+
 				// dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
 
-				fmt.Printf("Responded to mention: %s\n", notif.Record.Text)
-				bsky.RecordResponse(notif.Uri)    // Record the original mention
+				fmt.Printf("Dipatched jobs and responses to mention: %s\n", notif.Record.Text)
+				bsky.RecordResponse(notif.Uri) // Record the original mention
 
 			}
 		}

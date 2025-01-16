@@ -210,8 +210,11 @@ func StopJob(jobID, reason string, wait bool) (string, error) {
 	return response.EvaluationID, nil
 }
 
-func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostComponents) {
+func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostComponents, string) {
+	
+	var commandType string	
 	// Define the regex pattern to validate the command structure
+
 	pattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+job\s+run\s+https?://\S+$`
 
 	// Compile the regex
@@ -229,8 +232,11 @@ func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostCom
 			components.Text = post
 			components.Url = parts[3] // Assign the 4th part as the URL
 		}
+
+		commandType = "job_file"
+
 	}
 
 	// Check if the post matches the pattern
-	return isCommand, components
+	return isCommand, components, commandType
 }
