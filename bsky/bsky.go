@@ -296,9 +296,6 @@ func ProcessNotifications(notifications []Notification) []Notification {
 				// Add the generated image URL to the notification
 				notif.ImageURL = imageURL
 
-				// Log the generated image URL for debugging
-				fmt.Printf("Image URL generated: %s\n", imageURL)
-
 			}
 
 		}

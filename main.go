@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"os"
 	"net/http"
+	"strings"
+	"encoding/json"
 
 	"bbb/bsky"
 	"bbb/bacalhau"
 	"bbb/s3uploader"
 	"bbb/gancho"
+	"bbb/helpers"
+
 	"github.com/joho/godotenv"
 )
 
@@ -39,7 +43,67 @@ func uploadResultAndGetPublicURL(key, result string) (string, error) {
 
 }
 
-func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Notification, jobFileLink string) {
+func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Notification, imageURL string) {
+
+	bTest, bErr := bacalhau.GenerateClassificationJob(imageURL)
+	fmt.Println("bTest, bErr:", bTest, bErr)
+
+	result := bacalhau.CreateJob(bTest)
+
+	fmt.Println("Classification Job result:", result)
+	fmt.Println("JobID:", result.JobID)
+	fmt.Println("ExecutionID:", result.ExecutionID)
+	fmt.Println("Stdout:", result.Stdout)
+
+	splitStdoutStr := ">>> Results ID <<<"
+	classificationID := strings.TrimSpace(strings.Split(result.Stdout, splitStdoutStr)[1])
+
+	fmt.Println("classificationID:", classificationID)
+
+	objectStorageBaseURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/", os.Getenv("S3_IMAGE_BUCKET"), os.Getenv("AWS_REGION"))
+
+	metadataFile, metadataErr := helpers.DownloadFile(objectStorageBaseURL + classificationID + ".json")
+	_, imageErr := helpers.DownloadFile(objectStorageBaseURL + classificationID)
+
+	if metadataErr != nil {
+		fmt.Println("Could not retrieve result metadata:", metadataErr)
+	}
+
+	if imageErr != nil {
+		fmt.Println("Could not retrieve result image:", imageErr)
+	}
+
+	metadataStr := string(metadataFile)
+
+	var jsonObj map[string]interface{}
+	
+	err := json.Unmarshal(metadataFile, &jsonObj)
+	if err != nil {
+		fmt.Printf("Error parsing JSON: %v\n", err)
+		return
+	}
+
+	analysisText := strings.Split(jsonObj["resultsText"].(string), "\n")[0]
+	classes := strings.Split( strings.Join( strings.Split( analysisText, " " )[3:], " " ), "," )
+	
+	fmt.Println("metadataStr:", metadataStr)
+	fmt.Println("Analysis:", analysisText)
+	fmt.Println("Classes:", classes)
+	// fmt.Println("imageFile:", imageFile)
+
+	var replyText string
+
+	if len(classes) > 0 {
+		replyText += "I can see...\n\n"
+
+		for _, class := range classes {
+			replyText += fmt.Sprintf("%s\n", strings.TrimSpace(class))
+		}
+
+	}
+
+	sendReply(session, notif, replyText)
+
 
 }
 
@@ -49,7 +113,7 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 	fmt.Println("Job file link:", jobFileLink)
 
 	// Step 1: Retrieve the job file
-	jobFile, jobFileErr := bacalhau.GetLinkedJobFile(jobFileLink)
+	jobFile, jobFileErr := bacalhau.GetJobFileFromURL(jobFileLink)
 	if jobFileErr != nil {
 		fmt.Println("Could not get job file to dispatch job:", jobFileErr)
 
@@ -91,6 +155,7 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 
 	// Step 5: Determine the reply text based on ExecutionID and Stdout
 	var replyText string
+
 	if result.ExecutionID != "" && result.Stdout != "" {
 
 		var jobResultContent = result.Stdout
@@ -142,6 +207,7 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 
 	// Step 6: Send the reply
 	sendReply(session, notif, replyText)
+
 }
 
 // Helper to send replies
@@ -216,6 +282,9 @@ func main() {
 		return
 	}
 
+	// bTest, bErr := bacalhau.GenerateClassificationJob("https://smt.codes/image.jpg")
+	// fmt.Println("bTest, bErr:", bTest, bErr)
+
 	startHTTPServer()
 
 	bsky.StartTime = time.Now()
@@ -249,8 +318,8 @@ func main() {
 					go dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
 				}
 
-				if commandType == "classify" {
-					go dispatchClassificationJobAndPostReply(session, notif, postComponents.Url)
+				if commandType == "classify_image" {
+					go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL)
 				}
 
 				// dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
