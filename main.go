@@ -63,7 +63,7 @@ func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Not
 	objectStorageBaseURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/", os.Getenv("S3_IMAGE_BUCKET"), os.Getenv("AWS_REGION"))
 
 	metadataFile, metadataErr := helpers.DownloadFile(objectStorageBaseURL + classificationID + ".json")
-	_, imageErr := helpers.DownloadFile(objectStorageBaseURL + classificationID)
+	imageFile, imageErr := helpers.DownloadFile(objectStorageBaseURL + classificationID)
 
 	if metadataErr != nil {
 		fmt.Println("Could not retrieve result metadata:", metadataErr)
@@ -91,7 +91,7 @@ func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Not
 	fmt.Println("Classes:", classes)
 	// fmt.Println("imageFile:", imageFile)
 
-	var replyText string
+	replyText := "Using the model YOLOv5n, "
 
 	if len(classes) > 0 {
 		replyText += "I can see...\n\n"
@@ -100,9 +100,14 @@ func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Not
 			replyText += fmt.Sprintf("%s\n", strings.TrimSpace(class))
 		}
 
+	} else {
+
+		replyText += "I can't detect anything in that image!\n\nSorry!"
+
 	}
 
-	sendReply(session, notif, replyText)
+	// sendReply(session, notif, replyText)
+	sendReplyWithImage(session, notif, replyText, imageFile)
 
 
 }
@@ -207,6 +212,31 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 
 	// Step 6: Send the reply
 	sendReply(session, notif, replyText)
+
+}
+
+func sendReplyWithImage(session *bsky.Session, notif bsky.Notification, replyText string, image []byte) {
+
+	fmt.Println("Preparing to send reply...")
+
+	var responseUri string
+	var err error
+
+	if os.Getenv("DRY_RUN") != "true"{
+
+		responseUri, err = bsky.ReplyToMentionWithImage(session.AccessJwt, notif, replyText, image, session.Did)
+		if err != nil {
+			fmt.Println("Error responding to mention:", err)
+			return
+		}
+		
+	} else {
+		responseUri = "DRY_RUN_URI"
+	}
+	
+	fmt.Println("Reply sent successfully. Response URI:", responseUri)
+
+	bsky.RecordResponse(responseUri)
 
 }
 

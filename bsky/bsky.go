@@ -163,6 +163,119 @@ func FetchNotifications(jwt string) ([]Notification, error) {
 	return processedNotifications, nil
 }
 
+func UploadImage(jwt string, imageData []byte) (map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/com.atproto.repo.uploadBlob", blueskyAPIBase)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(imageData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create image upload request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	req.Header.Set("Content-Type", "image/jpeg") // Adjust for other formats like "image/png" if needed
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("image upload failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := ioutil.ReadAll(resp.Body)
+		return nil, fmt.Errorf("image upload failed, status code: %d, response: %s", resp.StatusCode, string(respBody))
+	}
+
+	var response map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&response)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode image upload response: %v", err)
+	}
+
+	blob, ok := response["blob"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("image upload response missing 'blob' field or it is not a map")
+	}
+
+	return blob, nil
+}
+
+func ReplyToMentionWithImage(jwt string, notif Notification, text string, imageData []byte, userDid string) (string, error) {
+	// Step 1: Upload the image
+	imageBlob, err := UploadImage(jwt, imageData)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload image: %v", err)
+	}
+
+	// Step 2: Prepare the payload for replying with the image
+	url := fmt.Sprintf("%s/com.atproto.repo.createRecord", blueskyAPIBase)
+
+	payload := map[string]interface{}{
+		"collection": "app.bsky.feed.post",
+		"repo":       userDid,
+		"record": map[string]interface{}{
+			"$type":     "app.bsky.feed.post",
+			"text":      text,
+			"createdAt": time.Now().Format(time.RFC3339),
+			"reply": map[string]interface{}{
+				"root": map[string]string{
+					"uri": notif.Uri,
+					"cid": notif.Cid,
+				},
+				"parent": map[string]string{
+					"uri": notif.Uri,
+					"cid": notif.Cid,
+				},
+			},
+			"embed": map[string]interface{}{
+				"$type": "app.bsky.embed.images",
+				"images": []map[string]interface{}{
+					{
+						"image": imageBlob, // Directly use the blob as the image
+						"alt":   "Uploaded image", // Provide a meaningful alt description if needed
+					},
+				},
+			},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal payload: %v", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := ioutil.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to post reply, status code: %d, response: %s", resp.StatusCode, string(respBody))
+	}
+
+	var response map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&response)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	if uri, ok := response["uri"].(string); ok {
+		return uri, nil
+	}
+
+	return "", fmt.Errorf("response URI not found")
+}
+
+
 func ReplyToMention(jwt string, notif Notification, text string, userDid string) (string, error) {
 	url := fmt.Sprintf("%s/com.atproto.repo.createRecord", blueskyAPIBase)
 
