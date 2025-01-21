@@ -91,7 +91,7 @@ func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Not
 	fmt.Println("Classes:", classes)
 	// fmt.Println("imageFile:", imageFile)
 
-	replyText := "Using the model YOLOv5n, "
+	replyText := fmt.Sprintf("Using the model '%s', ", os.Getenv("CLASSIFICATION_IMAGE"))
 
 	if len(classes) > 0 {
 		replyText += "I can see...\n\n"
@@ -99,6 +99,8 @@ func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Not
 		for _, class := range classes {
 			replyText += fmt.Sprintf("%s\n", strings.TrimSpace(class))
 		}
+
+		replyText += "\n\n🐟🐟🐟🐟🐟🐟🐟🐟🐟🐟\n\n"		
 
 	} else {
 
