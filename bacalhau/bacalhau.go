@@ -158,7 +158,7 @@ func CreateJob(jobSpec string) JobExecutionResult {
 
 	// Wait for 20 seconds
 	fmt.Println("Waiting for 20 seconds before querying executions...")
-	time.Sleep(20 * time.Second)
+	time.Sleep(30 * time.Second)
 
 	executionsURL := fmt.Sprintf("http://%s/api/v1/orchestrator/jobs/%s/executions", BACALHAU_HOST, response.JobID)
 	fmt.Println("executionsURL:", executionsURL)
