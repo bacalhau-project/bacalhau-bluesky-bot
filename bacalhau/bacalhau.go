@@ -1,7 +1,7 @@
 package bacalhau
 
 import(
-
+	"os"
 	"fmt"
 	"bytes"
 	"encoding/json"
@@ -24,7 +24,7 @@ type JobExecutionResult struct {
 
 var BACALHAU_HOST string
 
-func GetLinkedJobFile(url string) (string, error) {
+func GetJobFileFromURL(url string) (string, error) {
 
 	fmt.Println("Getting job file from URL:", url)
 
@@ -66,6 +66,52 @@ func GetLinkedJobFile(url string) (string, error) {
 
 	// Return the formatted JSON string
 	return string(jsonContent), nil
+}
+
+func GenerateClassificationJob(imageURL string) (string, error) {
+	// Read the YAML file
+	jobFileTemplate, jtErr := os.ReadFile("./classify_job.yaml")
+	if jtErr != nil {
+		return "", fmt.Errorf("an error occurred reading the classify job.yaml file: %w", jtErr)
+	}
+
+	// Parse the YAML into a generic map
+	var yamlContent map[string]interface{}
+	if err := yaml.Unmarshal(jobFileTemplate, &yamlContent); err != nil {
+		return "", fmt.Errorf("an error occurred parsing the YAML file: %w", err)
+	}
+
+	// Add or update the IMAGE environment variable manually
+	tasks := yamlContent["Tasks"].([]interface{})
+	firstTask := tasks[0].(map[string]interface{})
+	engine := firstTask["Engine"].(map[string]interface{})
+	params := engine["Params"].(map[string]interface{})
+	envVars := []string{
+		fmt.Sprintf("IMAGE=%s", imageURL),
+		fmt.Sprintf("MODEL=%s", os.Getenv("CLASSIFICATION_IMAGE")),
+		fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", os.Getenv("AWS_ACCESS_KEY_ID")),
+		fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", os.Getenv("AWS_SECRET_ACCESS_KEY")),
+		fmt.Sprintf("S3_BUCKET=%s", os.Getenv("S3_IMAGE_BUCKET")),
+	}
+
+	params["EnvironmentVariables"] = envVars
+
+	fmt.Println("TASKS:", tasks)
+
+	// Wrap the updated YAML content into the final JSON structure
+	wrappedContent := map[string]interface{}{
+		"Job": yamlContent,
+	}
+
+	// Convert the map to JSON
+	jsonContent, err := json.MarshalIndent(wrappedContent, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("an error occurred converting YAML to JSON: %w", err)
+	}
+
+	// Return the JSON string
+	return string(jsonContent), nil
+
 }
 
 func CreateJob(jobSpec string) JobExecutionResult {
@@ -115,6 +161,8 @@ func CreateJob(jobSpec string) JobExecutionResult {
 	time.Sleep(20 * time.Second)
 
 	executionsURL := fmt.Sprintf("http://%s/api/v1/orchestrator/jobs/%s/executions", BACALHAU_HOST, response.JobID)
+	fmt.Println("executionsURL:", executionsURL)
+
 	req, err = http.NewRequest("GET", executionsURL, nil)
 	if err != nil {
 		fmt.Printf("Error creating request for executions: %v\n", err)
@@ -141,6 +189,7 @@ func CreateJob(jobSpec string) JobExecutionResult {
 			} `json:"RunOutput"`
 		} `json:"Items"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&executionsResponse); err != nil {
 		fmt.Printf("Error decoding executions response: %v\n", err)
 		return JobExecutionResult{}
@@ -151,12 +200,26 @@ func CreateJob(jobSpec string) JobExecutionResult {
 		return JobExecutionResult{}
 	}
 
-	firstExecution := executionsResponse.Items[0]
-	return JobExecutionResult{
-		JobID:       response.JobID,
-		ExecutionID: firstExecution.ID,
-		Stdout:      firstExecution.RunOutput.Stdout,
+	// firstExecution := executionsResponse.Items[0]
+	// return JobExecutionResult{
+	// 	JobID:       response.JobID,
+	// 	ExecutionID: firstExecution.ID,
+	// 	Stdout:      firstExecution.RunOutput.Stdout,
+	// }
+
+	chosenJobToReturn := JobExecutionResult{
+		JobID: response.JobID,
 	}
+
+	for _, thisExecution := range executionsResponse.Items {
+		if thisExecution.RunOutput.Stdout != "" {
+			chosenJobToReturn.ExecutionID = thisExecution.ID
+			chosenJobToReturn.Stdout = thisExecution.RunOutput.Stdout
+		}
+	}
+
+	return chosenJobToReturn
+
 }
 
 
@@ -215,21 +278,22 @@ func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostCom
 	var commandType string	
 	// Define the regex pattern to validate the command structure
 
-	pattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+job\s+run\s+https?://\S+$`
+	jobRunPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+job\s+run\s+https?://\S+$`
+	jobRunRegex := regexp.MustCompile(jobRunPattern)
+	isJobRunCommand := jobRunRegex.MatchString(post)
 
-	// Compile the regex
-	re := regexp.MustCompile(pattern)
-
-	isCommand := re.MatchString(post)
+	classifyJobPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+classify`
+	classifyJobRegex := regexp.MustCompile(classifyJobPattern)
+	isClassifyJobCommand := classifyJobRegex.MatchString(post)
 
 	components := bsky.PostComponents{}
+	parts := strings.Fields(post)
+	components.Text = post
 
-	if isCommand {
+	if isJobRunCommand {
 		// Split the post string into parts
-		parts := strings.Fields(post)
 
 		if len(parts) >= 4 { // Ensure the post has at least 4 parts
-			components.Text = post
 			components.Url = parts[3] // Assign the 4th part as the URL
 		}
 
@@ -237,6 +301,12 @@ func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostCom
 
 	}
 
+	if isClassifyJobCommand {
+
+		commandType = "classify_image"
+
+	}
+
 	// Check if the post matches the pattern
-	return isCommand, components, commandType
+	return isJobRunCommand || isClassifyJobCommand, components, commandType
 }
