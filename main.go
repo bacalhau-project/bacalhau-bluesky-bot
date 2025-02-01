@@ -43,9 +43,9 @@ func uploadResultAndGetPublicURL(key, result string) (string, error) {
 
 }
 
-func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Notification, imageURL string) {
+func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Notification, imageURL string, isHotDogJob bool) {
 
-	bTest, bErr := bacalhau.GenerateClassificationJob(imageURL)
+	bTest, bErr := bacalhau.GenerateClassificationJob(imageURL, isHotDogJob)
 	fmt.Println("bTest, bErr:", bTest, bErr)
 
 	result := bacalhau.CreateJob(bTest)
@@ -91,22 +91,35 @@ func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Not
 	fmt.Println("Classes:", classes)
 	// fmt.Println("imageFile:", imageFile)
 
-	replyText := fmt.Sprintf("Using the model '%s', ", os.Getenv("CLASSIFICATION_IMAGE"))
+	replyText := ""
 
-	if len(classes) > 0 {
-		replyText += "I can see...\n\n"
+	if isHotDogJob == false {
+
+		replyText := fmt.Sprintf("Using the model '%s', ", os.Getenv("CLASSIFICATION_IMAGE"))
+	
+		if len(classes) > 0 {
+			replyText += "I can see...\n\n"
+	
+			for _, class := range classes {
+				replyText += fmt.Sprintf("%s\n", strings.TrimSpace(class))
+			}
+	
+			replyText += "\n\n🐟🐟🐟🐟🐟🐟🐟🐟🐟🐟\n\n"		
+	
+		} else {
+	
+			replyText += "I can't detect anything in that image!\n\nSorry!"
+	
+		}
+
+	} else {
 
 		for _, class := range classes {
 			replyText += fmt.Sprintf("%s\n", strings.TrimSpace(class))
 		}
 
-		replyText += "\n\n🐟🐟🐟🐟🐟🐟🐟🐟🐟🐟\n\n"		
-
-	} else {
-
-		replyText += "I can't detect anything in that image!\n\nSorry!"
-
 	}
+
 
 	// sendReply(session, notif, replyText)
 	sendReplyWithImage(session, notif, replyText, imageFile)
@@ -351,7 +364,11 @@ func main() {
 				}
 
 				if commandType == "classify_image" {
-					go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL)
+					go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, false)
+				}
+
+				if commandType == "hotdog" {
+					go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true)
 				}
 
 				// dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)

@@ -68,7 +68,7 @@ func GetJobFileFromURL(url string) (string, error) {
 	return string(jsonContent), nil
 }
 
-func GenerateClassificationJob(imageURL string) (string, error) {
+func GenerateClassificationJob(imageURL string, isHotDogJob bool) (string, error) {
 	// Read the YAML file
 	jobFileTemplate, jtErr := os.ReadFile("./classify_job.yaml")
 	if jtErr != nil {
@@ -92,6 +92,12 @@ func GenerateClassificationJob(imageURL string) (string, error) {
 		fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", os.Getenv("AWS_ACCESS_KEY_ID")),
 		fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", os.Getenv("AWS_SECRET_ACCESS_KEY")),
 		fmt.Sprintf("S3_BUCKET=%s", os.Getenv("S3_IMAGE_BUCKET")),
+	}
+
+	if isHotDogJob == true {
+		envVars = append(envVars, fmt.Sprintf("HOTDOG_DETECTION=%s", "true"),)
+	} else {
+		envVars = append(envVars, fmt.Sprintf("HOTDOG_DETECTION=%s", "false"),)
 	}
 
 	params["EnvironmentVariables"] = envVars
@@ -157,7 +163,7 @@ func CreateJob(jobSpec string) JobExecutionResult {
 	fmt.Printf("Job created successfully with ID: %s\n", response.JobID)
 
 	// Wait for 20 seconds
-	fmt.Println("Waiting for 20 seconds before querying executions...")
+	fmt.Println("Waiting for 30 seconds before querying executions...")
 	time.Sleep(30 * time.Second)
 
 	executionsURL := fmt.Sprintf("http://%s/api/v1/orchestrator/jobs/%s/executions", BACALHAU_HOST, response.JobID)
@@ -286,6 +292,10 @@ func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostCom
 	classifyJobRegex := regexp.MustCompile(classifyJobPattern)
 	isClassifyJobCommand := classifyJobRegex.MatchString(post)
 
+	hotDogDetectionJobPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+hotdog?`
+	hotDogJobRegex := regexp.MustCompile(hotDogDetectionJobPattern)
+	isHotDogJobCommand := hotDogJobRegex.MatchString(post)
+
 	components := bsky.PostComponents{}
 	parts := strings.Fields(post)
 	components.Text = post
@@ -307,6 +317,10 @@ func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostCom
 
 	}
 
+	if isHotDogJobCommand {
+		commandType = "hotdog"
+	}
+
 	// Check if the post matches the pattern
-	return isJobRunCommand || isClassifyJobCommand, components, commandType
+	return isJobRunCommand || isClassifyJobCommand || isHotDogJobCommand, components, commandType
 }

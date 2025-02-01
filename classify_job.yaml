@@ -6,9 +6,10 @@ Tasks:
     Engine:
       Type: docker
       Params:
-        Image: seanmtracey/bbb-classify:latest
+        Image: seanmtracey/bbb-classify:hotdog
         EnvironmentVariables:
           - MODEL=yolov5n
+          - HOTDOG_DETECTION=false
           # - IMAGE=placeholder.jpg
           # - S3_BUCKET=<BUCKET_NAME>
           # - AWS_ACCESS_KEY_ID=<ACCESS_KEY_ID>
