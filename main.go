@@ -43,9 +43,9 @@ func uploadResultAndGetPublicURL(key, result string) (string, error) {
 
 }
 
-func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Notification, imageURL string, isHotDogJob bool) {
+func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Notification, imageURL string, isHotDogJob bool, isArbitraryClassJob bool, className string) {
 
-	bTest, bErr := bacalhau.GenerateClassificationJob(imageURL, isHotDogJob)
+	bTest, bErr := bacalhau.GenerateClassificationJob(imageURL, isHotDogJob, className)
 	fmt.Println("bTest, bErr:", bTest, bErr)
 
 	result := bacalhau.CreateJob(bTest)
@@ -350,7 +350,7 @@ func main() {
 		for _, notif := range notifications {
 			// Process only "mention" notifications
 
-			isPostACommand, postComponents, commandType := bacalhau.CheckPostIsCommand(notif.Record.Text, bsky.Username)
+			isPostACommand, postComponents, commandType, className := bacalhau.CheckPostIsCommand(notif.Record.Text, bsky.Username)
 
 			if notif.Reason == "mention" && bsky.ShouldRespond(notif) && !bsky.HasResponded(notif.Uri) && isPostACommand {
 				fmt.Printf("Command detected: %s\n", notif.Record.Text)
@@ -364,11 +364,15 @@ func main() {
 				}
 
 				if commandType == "classify_image" {
-					go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, false)
+					go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, false, false, className)
 				}
 
 				if commandType == "hotdog" {
-					go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true)
+					go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, false, className)
+				}
+
+				if commandType == "arbitraryClass" {
+					go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, true, className)
 				}
 
 				// dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)

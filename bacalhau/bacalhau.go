@@ -68,7 +68,7 @@ func GetJobFileFromURL(url string) (string, error) {
 	return string(jsonContent), nil
 }
 
-func GenerateClassificationJob(imageURL string, isHotDogJob bool) (string, error) {
+func GenerateClassificationJob(imageURL string, isHotDogJob bool, className string) (string, error) {
 	// Read the YAML file
 	jobFileTemplate, jtErr := os.ReadFile("./classify_job.yaml")
 	if jtErr != nil {
@@ -98,6 +98,11 @@ func GenerateClassificationJob(imageURL string, isHotDogJob bool) (string, error
 		envVars = append(envVars, fmt.Sprintf("HOTDOG_DETECTION=%s", "true"),)
 	} else {
 		envVars = append(envVars, fmt.Sprintf("HOTDOG_DETECTION=%s", "false"),)
+	}
+
+	if className != "" {
+		envVars = append(envVars, "ARBITRARY_DETECTION=true" )
+		envVars = append(envVars, fmt.Sprintf("CLASS_NAME=%s", className) )
 	}
 
 	params["EnvironmentVariables"] = envVars
@@ -279,48 +284,57 @@ func StopJob(jobID, reason string, wait bool) (string, error) {
 	return response.EvaluationID, nil
 }
 
-func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostComponents, string) {
-	
-	var commandType string	
-	// Define the regex pattern to validate the command structure
+func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostComponents, string, string) {
+	var commandType, className string
 
+	// Define the regex patterns
 	jobRunPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+job\s+run\s+https?://\S+$`
-	jobRunRegex := regexp.MustCompile(jobRunPattern)
-	isJobRunCommand := jobRunRegex.MatchString(post)
-
 	classifyJobPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+classify`
-	classifyJobRegex := regexp.MustCompile(classifyJobPattern)
-	isClassifyJobCommand := classifyJobRegex.MatchString(post)
-
 	hotDogDetectionJobPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+hotdog?`
+	arbitraryClassPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+(\w+)\?$`
+
+	// Compile the regex
+	jobRunRegex := regexp.MustCompile(jobRunPattern)
+	classifyJobRegex := regexp.MustCompile(classifyJobPattern)
 	hotDogJobRegex := regexp.MustCompile(hotDogDetectionJobPattern)
+	arbitraryClassRegex := regexp.MustCompile(arbitraryClassPattern)
+
+	// Check if the post matches any command pattern
+	isJobRunCommand := jobRunRegex.MatchString(post)
+	isClassifyJobCommand := classifyJobRegex.MatchString(post)
 	isHotDogJobCommand := hotDogJobRegex.MatchString(post)
+	isArbitraryClassCommand := arbitraryClassRegex.MatchString(post)
 
 	components := bsky.PostComponents{}
 	parts := strings.Fields(post)
 	components.Text = post
 
 	if isJobRunCommand {
-		// Split the post string into parts
-
 		if len(parts) >= 4 { // Ensure the post has at least 4 parts
 			components.Url = parts[3] // Assign the 4th part as the URL
 		}
-
 		commandType = "job_file"
-
 	}
 
 	if isClassifyJobCommand {
-
 		commandType = "classify_image"
-
 	}
 
 	if isHotDogJobCommand {
 		commandType = "hotdog"
 	}
 
-	// Check if the post matches the pattern
-	return isJobRunCommand || isClassifyJobCommand || isHotDogJobCommand, components, commandType
+	if isArbitraryClassCommand {
+		commandType = "arbitraryClass"
+		matches := arbitraryClassRegex.FindStringSubmatch(post)
+		if len(matches) > 1 {
+			className = matches[1] // Extracts <CLASS_NAME>
+		}
+	}
+
+	// Check if the post matches any of the patterns
+	return isJobRunCommand || isClassifyJobCommand || isHotDogJobCommand || isArbitraryClassCommand, components, commandType, className
+
 }
+
+
