@@ -6,7 +6,7 @@ Tasks:
     Engine:
       Type: docker
       Params:
-        Image: seanmtracey/bbb-classify:arbitrary
+        Image: seanmtracey/bbb-classify:hotdog
         EnvironmentVariables:
           - MODEL=yolov5n
           - HOTDOG_DETECTION=false
