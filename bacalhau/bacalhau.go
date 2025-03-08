@@ -4,12 +4,15 @@ import(
 	"os"
 	"fmt"
 	"bytes"
-	"encoding/json"
+	"io"
+	"time"
 	"regexp"
 	"strings"
+	"errors"
+	"encoding/json"
+	"encoding/base64"
 	"io/ioutil"
 	"net/http"
-	"time"
 	
 	"bbb/bsky"
 
@@ -23,6 +26,97 @@ type JobExecutionResult struct {
 }
 
 var BACALHAU_HOST string
+
+func constructOrchestratorURL() (string, error){
+
+	var protocol string
+	var hostName string
+	var portNumber string
+
+	if os.Getenv("USING_SECURE_ORCHESTRATOR") == "true"{
+		protocol = "https"
+	} else {
+		protocol = "http"
+	}
+
+	if os.Getenv("BACALHAU_HOST") == "" {
+		return "", errors.New("BACALHAU_HOST is not set with environment variables. Cannot construct Orchestrator URL.")
+	} else {
+		hostName = os.Getenv("BACALHAU_HOST")
+	}
+
+	if os.Getenv("BACALHAU_PORT") == ""{
+		fmt.Println("Warning: BACALHAU_PORT is not set with environment variables. Defaulting to 1234")
+		portNumber = "1234"
+	} else {
+		portNumber = os.Getenv("BACALHAU_PORT")
+	}
+
+	constructedURL := fmt.Sprintf(`%s://%s:%s`, protocol, hostName, portNumber)
+
+	return constructedURL, nil
+
+}
+
+func getSignedAuthToken() (string, error) {
+
+	accessToken := os.Getenv("BACALHAU_ACCESS_TOKEN")
+	if accessToken == "" {
+		return "", errors.New("BACALHAU_ACCESS_TOKEN isn't set by environment variables. Cannot generate auth token.")
+	}
+
+	b64Token := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf(`{"token":"%s"}`, accessToken)))
+
+	authPayload := map[string]string{
+		"MethodData": b64Token,
+	}
+
+	payloadBytes, err := json.Marshal(authPayload)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode auth payload: %v", err)
+	}
+
+	orchestratorURL, err := constructOrchestratorURL()
+	if err != nil {
+		return "", fmt.Errorf("failed to construct orchestrator URL: %v", err)
+	}
+
+	authEndpoint := fmt.Sprintf("%s/api/v1/auth/shared_secret", orchestratorURL)
+
+	fmt.Println("Authenticating with orchestrator...")
+
+	req, err := http.NewRequest("POST", authEndpoint, bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to authenticate with orchestrator: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to authenticate: status %d, response: %s", resp.StatusCode, string(body))
+	}
+
+	var authResponse struct {
+		Authentication struct {
+			Token string `json:"token"`
+		} `json:"Authentication"`
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&authResponse)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse authentication response: %v", err)
+	}
+
+	return authResponse.Authentication.Token, nil
+
+}
 
 func GetJobFileFromURL(url string) (string, error) {
 
@@ -125,19 +219,93 @@ func GenerateClassificationJob(imageURL string, isHotDogJob bool, className stri
 
 }
 
+func GenerateAltTextJob(imageURL string) (string, error) {
+
+	jobFileTemplate, jtErr := os.ReadFile("./alt_text_job.yaml")
+	if jtErr != nil {
+		return "", fmt.Errorf("an error occurred reading the alt-text job.yaml file: %w", jtErr)
+	}
+
+	// Parse the YAML into a generic map
+	var yamlContent map[string]interface{}
+	if err := yaml.Unmarshal(jobFileTemplate, &yamlContent); err != nil {
+		return "", fmt.Errorf("an error occurred parsing the YAML file: %w", err)
+	}
+
+	// Add or update the IMAGE environment variable manually
+	tasks := yamlContent["Tasks"].([]interface{})
+	firstTask := tasks[0].(map[string]interface{})
+	engine := firstTask["Engine"].(map[string]interface{})
+	params := engine["Params"].(map[string]interface{})
+	envVars := []string{
+		fmt.Sprintf("IMAGE_URL=%s", imageURL),
+		fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", os.Getenv("AWS_ACCESS_KEY_ID")),
+		fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", os.Getenv("AWS_SECRET_ACCESS_KEY")),
+		fmt.Sprintf("S3_BUCKET=%s", os.Getenv("S3_IMAGE_BUCKET")),
+	}
+
+	params["EnvironmentVariables"] = envVars
+
+	fmt.Println("TASKS:", tasks)
+
+	// Wrap the updated YAML content into the final JSON structure
+	wrappedContent := map[string]interface{}{
+		"Job": yamlContent,
+	}
+
+	// Convert the map to JSON
+	jsonContent, err := json.MarshalIndent(wrappedContent, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("an error occurred converting YAML to JSON: %w", err)
+	}
+
+	// Return the JSON string
+	return string(jsonContent), nil
+
+}
+
 func CreateJob(jobSpec string) JobExecutionResult {
-	url := fmt.Sprintf("http://%s/api/v1/orchestrator/jobs", BACALHAU_HOST)
-	fmt.Println("Sending job to:", url)
+
+	var token string
+	var tokenErr error
+
+	orchestratorURL, orchErr := constructOrchestratorURL()
+
+	if orchErr != nil {
+		fmt.Println("Could not create Job:", orchErr.Error())
+		return JobExecutionResult{}
+	}
+
+	if os.Getenv("USING_SECURE_ORCHESTRATOR") == "true" {
+
+		token, tokenErr = getSignedAuthToken()
+
+		if tokenErr != nil {
+
+			fmt.Println("Could not create Job:", tokenErr.Error())
+			return JobExecutionResult{}
+
+		}
+
+	}
+
+	createJobURL := fmt.Sprintf("%s/api/v1/orchestrator/jobs", orchestratorURL)
+	fmt.Println("Sending job to:", createJobURL)
 
 	// Convert the job specification string to a JSON byte slice
 	jsonData := []byte(jobSpec)
 
-	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("PUT", createJobURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		fmt.Printf("Error creating HTTP request: %v\n", err)
 		return JobExecutionResult{}
 	}
 	req.Header.Set("Content-Type", "application/json")
+	
+	if os.Getenv("USING_SECURE_ORCHESTRATOR") == "true" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token) )
+	}
+
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -171,13 +339,17 @@ func CreateJob(jobSpec string) JobExecutionResult {
 	fmt.Println("Waiting for 30 seconds before querying executions...")
 	time.Sleep(30 * time.Second)
 
-	executionsURL := fmt.Sprintf("http://%s/api/v1/orchestrator/jobs/%s/executions", BACALHAU_HOST, response.JobID)
+	executionsURL := fmt.Sprintf("%s/api/v1/orchestrator/jobs/%s/executions", orchestratorURL, response.JobID)
 	fmt.Println("executionsURL:", executionsURL)
 
 	req, err = http.NewRequest("GET", executionsURL, nil)
 	if err != nil {
 		fmt.Printf("Error creating request for executions: %v\n", err)
 		return JobExecutionResult{}
+	}
+
+	if os.Getenv("USING_SECURE_ORCHESTRATOR") == "true" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token) )
 	}
 
 	resp, err = client.Do(req)
@@ -292,18 +464,21 @@ func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostCom
 	classifyJobPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+classify`
 	hotDogDetectionJobPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+hotdog?`
 	arbitraryClassPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+(\w+)\?$`
+	altTextJobPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+alt-text`
 
 	// Compile the regex
 	jobRunRegex := regexp.MustCompile(jobRunPattern)
 	classifyJobRegex := regexp.MustCompile(classifyJobPattern)
 	hotDogJobRegex := regexp.MustCompile(hotDogDetectionJobPattern)
 	arbitraryClassRegex := regexp.MustCompile(arbitraryClassPattern)
+	altTextJobRegex := regexp.MustCompile(altTextJobPattern)
 
 	// Check if the post matches any command pattern
 	isJobRunCommand := jobRunRegex.MatchString(post)
 	isClassifyJobCommand := classifyJobRegex.MatchString(post)
 	isHotDogJobCommand := hotDogJobRegex.MatchString(post)
 	isArbitraryClassCommand := arbitraryClassRegex.MatchString(post)
+	isAltTextCommand := altTextJobRegex.MatchString(post)
 
 	components := bsky.PostComponents{}
 	parts := strings.Fields(post)
@@ -332,8 +507,12 @@ func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostCom
 		}
 	}
 
+	if isAltTextCommand {
+		commandType = "altText"
+	}
+
 	// Check if the post matches any of the patterns
-	return isJobRunCommand || isClassifyJobCommand || isHotDogJobCommand || isArbitraryClassCommand, components, commandType, className
+	return isJobRunCommand || isClassifyJobCommand || isHotDogJobCommand || isArbitraryClassCommand || isAltTextCommand, components, commandType, className
 
 }
 

@@ -107,6 +107,37 @@ func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Not
 	sendReplyWithImage(session, notif, replyText, imageFile)
 }
 
+func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notification) {
+
+	parentPost, pPostErr := bsky.GetRepliedToPost(session.AccessJwt, notif)
+
+	if pPostErr != nil {
+		fmt.Printf("Parent Post err: %s\n", pPostErr.Error())
+	}
+
+	fmt.Println("Parent Post: %+v", parentPost)
+	fmt.Println("Parent Post Image: %s", parentPost.ImageURL)
+
+	job, jErr := bacalhau.GenerateAltTextJob(parentPost.ImageURL)
+
+	if jErr != nil {
+		fmt.Printf("Could not generate alt-text Job file: %s", jErr.Error())
+	}
+
+	fmt.Println("Job file JSON:", job)
+
+	result := bacalhau.CreateJob(job)
+	fmt.Println("Alt-text result:", result)
+	fmt.Println("JobID:", result.JobID)
+	fmt.Println("ExecutionID:", result.ExecutionID)
+	fmt.Println("Stdout:", result.Stdout)
+
+	// Parse out classificationID
+	// splitStdoutStr := ">>> Results ID <<<"
+	// classificationID := strings.TrimSpace(strings.Split(result.Stdout, splitStdoutStr)[1])
+
+}
+
 func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notification, jobFileLink string) {
 	fmt.Println("Starting dispatchBacalhauJobAndPostReply...")
 	fmt.Println("Job file link:", jobFileLink)
@@ -312,6 +343,8 @@ func main() {
 						go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, false, className)
 					case "arbitraryClass":
 						go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, true, className)
+					case "altText":
+						go dispatchAltTextJobAndPostReply(session, notif)
 				}
 
 				fmt.Printf("Dispatched jobs and responses to mention: %s\n", notif.Record.Text)
