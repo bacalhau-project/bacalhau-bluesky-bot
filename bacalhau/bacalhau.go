@@ -391,7 +391,6 @@ func CreateJob(jobSpec string, timeToWaitForResults int) JobExecutionResult {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token) )
 	}
 
-
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {

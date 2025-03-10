@@ -116,15 +116,27 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 
 	if pPostErr != nil {
 		fmt.Printf("Parent Post err: %s\n", pPostErr.Error())
+		errorResponseTxt := "Sorry, we weren't able to get that post to generate alt-text. Please try again later!"
+		sendReply(session, notif, errorResponseTxt)
+		return
 	}
 
 	fmt.Printf("Parent Post: %+v\n", parentPost)
 	fmt.Printf("Parent Post Image: %s\n", parentPost.ImageURL)
 
+	if parentPost.ImageURL == "" {
+		errorResponseTxt := "Sorry, we weren't able to to find an image in that post to generate alt-text. Please try again later!"
+		sendReply(session, notif, errorResponseTxt)
+		return
+	}
+
 	job, jErr := bacalhau.GenerateAltTextJob(parentPost.ImageURL)
 
 	if jErr != nil {
 		fmt.Printf("Could not generate alt-text Job file: %s", jErr.Error())
+		errorResponseTxt := "Sorry, something went wrong with the Bot! Please try again later!"
+		sendReply(session, notif, errorResponseTxt)
+		return
 	}
 
 	fmt.Println("Job file JSON:", job)

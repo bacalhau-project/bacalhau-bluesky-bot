@@ -1,4 +1,4 @@
-Name: docker job
+Name: alt-text job
 Type: batch
 Count: 1
 Tasks:
@@ -9,6 +9,7 @@ Tasks:
         Image: seanmtracey/alt-llava:silent
         EnvironmentVariables:
           - IMAGE_URL=https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:hw7is7jjkrz2alyls4zqqjiy/bafkreifld7yzgywmtl6ctuafs2vyoq7o3cbldz7mog5dkte7ugskx2p22a@jpeg
+          - SILENT_OUTPUT=true
           # - S3_BUCKET=<BUCKET_NAME>
           # - AWS_ACCESS_KEY_ID=<ACCESS_KEY_ID>
           # - AWS_SECRET_ACCESS_KEY=<ACCESS_KEY_SECRET>

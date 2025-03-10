@@ -1,4 +1,4 @@
-Name: docker job
+Name: classify job
 Type: batch
 Count: 1
 Tasks:
