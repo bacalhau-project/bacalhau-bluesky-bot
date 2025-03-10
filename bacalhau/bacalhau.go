@@ -464,21 +464,23 @@ func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostCom
 	classifyJobPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+classify`
 	hotDogDetectionJobPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+hotdog?`
 	arbitraryClassPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+(\w+)\?$`
-	altTextJobPattern := `^@` + regexp.QuoteMeta(accountUsername) + `\s+alt-text`
 
 	// Compile the regex
 	jobRunRegex := regexp.MustCompile(jobRunPattern)
 	classifyJobRegex := regexp.MustCompile(classifyJobPattern)
 	hotDogJobRegex := regexp.MustCompile(hotDogDetectionJobPattern)
 	arbitraryClassRegex := regexp.MustCompile(arbitraryClassPattern)
-	altTextJobRegex := regexp.MustCompile(altTextJobPattern)
 
 	// Check if the post matches any command pattern
 	isJobRunCommand := jobRunRegex.MatchString(post)
 	isClassifyJobCommand := classifyJobRegex.MatchString(post)
 	isHotDogJobCommand := hotDogJobRegex.MatchString(post)
 	isArbitraryClassCommand := arbitraryClassRegex.MatchString(post)
-	isAltTextCommand := altTextJobRegex.MatchString(post)
+	isAltTextCommand := false
+
+	if strings.Contains(accountUsername, "alt-text.bots.bacalhau.org") {
+		isAltTextCommand = true
+	}
 
 	components := bsky.PostComponents{}
 	parts := strings.Fields(post)

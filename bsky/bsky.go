@@ -91,8 +91,6 @@ type PostComponents struct {
 	Url string
 }
 
-var Username string
-var Password string
 var blueskyAPIBase = "https://bsky.social/xrpc"
 var StartTime time.Time
 var RespondedFile = "responded_to.txt"
