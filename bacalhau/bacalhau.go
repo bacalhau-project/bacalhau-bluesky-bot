@@ -264,6 +264,91 @@ func GenerateAltTextJob(imageURL string) (string, error) {
 
 }
 
+func GetResultsForJob(jobID string) (JobExecutionResult, error) {
+
+	var token string
+	var tokenErr error
+
+	orchestratorURL, orchErr := constructOrchestratorURL()
+
+	if orchErr != nil {
+		fmt.Println("Could not create Job:", orchErr.Error())
+		return JobExecutionResult{}, orchErr
+	}
+
+	if os.Getenv("USING_SECURE_ORCHESTRATOR") == "true" {
+
+		token, tokenErr = getSignedAuthToken()
+
+		if tokenErr != nil {
+
+			fmt.Println("Could not create Job:", tokenErr.Error())
+			return JobExecutionResult{}, tokenErr
+
+		}
+
+	}
+
+	executionsURL := fmt.Sprintf("%s/api/v1/orchestrator/jobs/%s/executions", orchestratorURL, jobID)
+	fmt.Println("executionsURL:", executionsURL)
+
+	req, reqErr := http.NewRequest("GET", executionsURL, nil)
+	if reqErr != nil {
+		fmt.Printf("Error creating request for executions: %v\n", reqErr)
+		return JobExecutionResult{}, errors.New(fmt.Sprintf(`Error creating request for executions: %s`, reqErr.Error()))
+	}
+
+	if os.Getenv("USING_SECURE_ORCHESTRATOR") == "true" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token) )
+	}
+
+	client := &http.Client{}
+	resp, respErr := client.Do(req)
+	if respErr != nil {
+		fmt.Printf("Error fetching executions: %v\n", respErr)
+		return JobExecutionResult{}, errors.New(fmt.Sprintf(`Error fetching executions: %s`, respErr.Error()))
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Failed to fetch executions, status code: %d\n", resp.StatusCode)
+		return JobExecutionResult{}, errors.New(fmt.Sprintf(`Failed to fetch executions (HTTP status code: %d)`, resp.StatusCode))
+	}
+
+	var executionsResponse struct {
+		Items []struct {
+			ID        string `json:"ID"`
+			RunOutput struct {
+				Stdout string `json:"Stdout"`
+			} `json:"RunOutput"`
+		} `json:"Items"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&executionsResponse); err != nil {
+		fmt.Printf("Error decoding executions response: %v\n", err)
+		return JobExecutionResult{}, errors.New(fmt.Sprintf(`Error decoding executions response: %s`, err.Error()))
+	}
+
+	if len(executionsResponse.Items) == 0 {
+		fmt.Printf("No executions found for JobID: %s\n", jobID)
+		return JobExecutionResult{}, errors.New(fmt.Sprintf(`No executions found for JobID "%s"`, jobID))
+	}
+
+	chosenJobToReturn := JobExecutionResult{
+		JobID: jobID,
+	}
+
+	for _, thisExecution := range executionsResponse.Items {
+		if thisExecution.RunOutput.Stdout != "" {
+			chosenJobToReturn.ExecutionID = thisExecution.ID
+			chosenJobToReturn.Stdout = thisExecution.RunOutput.Stdout
+		}
+	}
+
+	return chosenJobToReturn, nil
+
+}
+
 func CreateJob(jobSpec string, timeToWaitForResults int) JobExecutionResult {
 
 	var token string
@@ -340,62 +425,32 @@ func CreateJob(jobSpec string, timeToWaitForResults int) JobExecutionResult {
 	waitTime := time.Duration(timeToWaitForResults) * time.Second
 	time.Sleep(waitTime)
 
-	executionsURL := fmt.Sprintf("%s/api/v1/orchestrator/jobs/%s/executions", orchestratorURL, response.JobID)
-	fmt.Println("executionsURL:", executionsURL)
+	// result, resultErr := GetResultsForJob(response.JobID)
 
-	req, err = http.NewRequest("GET", executionsURL, nil)
-	if err != nil {
-		fmt.Printf("Error creating request for executions: %v\n", err)
-		return JobExecutionResult{}
-	}
+	var result JobExecutionResult
+	var resultErr error
 
-	if os.Getenv("USING_SECURE_ORCHESTRATOR") == "true" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token) )
-	}
+	for i := 0; i < 5; i++ {
 
-	resp, err = client.Do(req)
-	if err != nil {
-		fmt.Printf("Error fetching executions: %v\n", err)
-		return JobExecutionResult{}
-	}
-	defer resp.Body.Close()
+		fmt.Println(fmt.Printf(`Making attempt no. %d to retrieve results for JobID "%s".`, i + 1, response.JobID))
 
-	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("Failed to fetch executions, status code: %d\n", resp.StatusCode)
-		return JobExecutionResult{}
-	}
+		result, resultErr = GetResultsForJob(response.JobID)
 
-	var executionsResponse struct {
-		Items []struct {
-			ID        string `json:"ID"`
-			RunOutput struct {
-				Stdout string `json:"Stdout"`
-			} `json:"RunOutput"`
-		} `json:"Items"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&executionsResponse); err != nil {
-		fmt.Printf("Error decoding executions response: %v\n", err)
-		return JobExecutionResult{}
-	}
-
-	if len(executionsResponse.Items) == 0 {
-		fmt.Printf("No executions found for JobID: %s\n", response.JobID)
-		return JobExecutionResult{}
-	}
-
-	chosenJobToReturn := JobExecutionResult{
-		JobID: response.JobID,
-	}
-
-	for _, thisExecution := range executionsResponse.Items {
-		if thisExecution.RunOutput.Stdout != "" {
-			chosenJobToReturn.ExecutionID = thisExecution.ID
-			chosenJobToReturn.Stdout = thisExecution.RunOutput.Stdout
+		if result.JobID != "" {
+			break
+		} else {
+			fmt.Println(fmt.Printf(`Did not get results for JobID "%s".`, response.JobID))
+			time.Sleep(waitTime)
 		}
+
 	}
 
-	return chosenJobToReturn
+	if resultErr != nil {
+		fmt.Println( fmt.Sprintf(`Failed to get results for JobID "%s": %s`, response.JobID, resultErr) )
+		return JobExecutionResult{}
+	}
+
+	return result
 
 }
 

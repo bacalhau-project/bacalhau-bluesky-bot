@@ -306,7 +306,9 @@ func startHTTPServer() {
 	fmt.Printf("Starting HTTP server on port %s\n", port)
 	go func() {
 		if err := http.ListenAndServe(port, nil); err != nil {
-			fmt.Printf("HTTP server failed: %v\n", err)
+			fmt.Printf("HTTP server failed: %s\n", err.Error())
+			fmt.Println("Unexpected condition in application. Exiting.")
+			os.Exit(1)
 		}
 	}()
 }
