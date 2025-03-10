@@ -115,8 +115,8 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 		fmt.Printf("Parent Post err: %s\n", pPostErr.Error())
 	}
 
-	fmt.Println("Parent Post: %+v", parentPost)
-	fmt.Println("Parent Post Image: %s", parentPost.ImageURL)
+	fmt.Printf("Parent Post: %+v\n", parentPost)
+	fmt.Printf("Parent Post Image: %s\n", parentPost.ImageURL)
 
 	job, jErr := bacalhau.GenerateAltTextJob(parentPost.ImageURL)
 
@@ -132,9 +132,34 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 	fmt.Println("ExecutionID:", result.ExecutionID)
 	fmt.Println("Stdout:", result.Stdout)
 
-	// Parse out classificationID
-	// splitStdoutStr := ">>> Results ID <<<"
-	// classificationID := strings.TrimSpace(strings.Split(result.Stdout, splitStdoutStr)[1])
+	if result.Stdout == ""{
+
+		fmt.Printf(`Job "%s" failed to produce alt-text in the permitted timeframe.`, result.JobID)
+		
+		errorResponseTxt := "Sorry, we weren't able to generate alt-text for that image. Please try again later!"
+		sendReply(session, notif, errorResponseTxt)
+
+	} else {
+
+		var truncatedAltText string
+		
+		splitAltText := strings.Split(result.Stdout, ". ")
+
+		for _, sentence := range splitAltText {
+
+			if len(truncatedAltText) + (len(sentence) + 1) < 270 {
+				truncatedAltText += fmt.Sprintf("%s. ", sentence)
+			} else {
+				continue
+			}
+
+		}
+
+		fmt.Println("truncatedAltText:", truncatedAltText)
+
+		sendReply(session, notif, truncatedAltText)
+
+	}
 
 }
 
@@ -299,7 +324,7 @@ func main() {
 	}
 
 	bacalhau.BACALHAU_HOST = os.Getenv("BACALHAU_HOST")
-	fmt.Printf("Bacalhau Orchestrator Node IP: %s\n", bacalhau.BACALHAU_HOST)
+	fmt.Printf("Bacalhau Orchestrator Hostname: %s\n", bacalhau.BACALHAU_HOST)
 
 	// Authenticate with Bluesky API
 	session, err := bsky.Authenticate(bsky.Username, bsky.Password)
