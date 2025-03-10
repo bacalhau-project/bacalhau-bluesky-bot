@@ -6,3 +6,6 @@ repopack-output.txt
 security_job.yaml
 Archive.zip
 .DS_Store
+NOTES.md
+auth_flow.sh
+compute_config.yaml

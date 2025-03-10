@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"strconv"
 
 	"bbb/bacalhau"
 	"bbb/bsky"
@@ -16,6 +17,8 @@ import (
 
 	"github.com/joho/godotenv"
 )
+
+var DEFAULT_JOB_WAIT_TIME int
 
 func uploadResultAndGetPublicURL(key, result string) (string, error) {
 	bucketName := os.Getenv("RESULTS_BUCKET")
@@ -44,7 +47,7 @@ func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Not
 	bTest, bErr := bacalhau.GenerateClassificationJob(imageURL, isHotDogJob, className)
 	fmt.Println("Classification job specification, error:", bTest, bErr)
 
-	result := bacalhau.CreateJob(bTest)
+	result := bacalhau.CreateJob(bTest, DEFAULT_JOB_WAIT_TIME)
 	fmt.Println("Classification Job result:", result)
 	fmt.Println("JobID:", result.JobID)
 	fmt.Println("ExecutionID:", result.ExecutionID)
@@ -107,6 +110,74 @@ func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Not
 	sendReplyWithImage(session, notif, replyText, imageFile)
 }
 
+func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notification) {
+
+	parentPost, pPostErr := bsky.GetRepliedToPost(session.AccessJwt, notif)
+
+	if pPostErr != nil {
+		fmt.Printf("Parent Post err: %s\n", pPostErr.Error())
+		errorResponseTxt := "Sorry, we weren't able to get that post to generate alt-text. Please try again later!"
+		sendReply(session, notif, errorResponseTxt)
+		return
+	}
+
+	fmt.Printf("Parent Post: %+v\n", parentPost)
+	fmt.Printf("Parent Post Image: %s\n", parentPost.ImageURL)
+
+	if parentPost.ImageURL == "" {
+		errorResponseTxt := "Sorry, we weren't able to to find an image in that post to generate alt-text. Please try again later!"
+		sendReply(session, notif, errorResponseTxt)
+		return
+	}
+
+	job, jErr := bacalhau.GenerateAltTextJob(parentPost.ImageURL)
+
+	if jErr != nil {
+		fmt.Printf("Could not generate alt-text Job file: %s", jErr.Error())
+		errorResponseTxt := "Sorry, something went wrong with the Bot! Please try again later!"
+		sendReply(session, notif, errorResponseTxt)
+		return
+	}
+
+	fmt.Println("Job file JSON:", job)
+
+	result := bacalhau.CreateJob(job, 10)
+	fmt.Println("Alt-text result:", result)
+	fmt.Println("JobID:", result.JobID)
+	fmt.Println("ExecutionID:", result.ExecutionID)
+	fmt.Println("Stdout:", result.Stdout)
+
+	if result.Stdout == ""{
+
+		fmt.Printf(`Job "%s" failed to produce alt-text in the permitted timeframe.`, result.JobID)
+
+		errorResponseTxt := "Sorry, we weren't able to generate alt-text for that image. Please try again later!"
+		sendReply(session, notif, errorResponseTxt)
+
+	} else {
+
+		var truncatedAltText string
+
+		splitAltText := strings.Split(result.Stdout, ". ")
+
+		for _, sentence := range splitAltText {
+
+			if len(truncatedAltText) + (len(sentence) + 1) < 270 {
+				truncatedAltText += fmt.Sprintf("%s. ", sentence)
+			} else {
+				continue
+			}
+
+		}
+
+		fmt.Println("truncatedAltText:", truncatedAltText)
+
+		sendReply(session, notif, truncatedAltText)
+
+	}
+
+}
+
 func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notification, jobFileLink string) {
 	fmt.Println("Starting dispatchBacalhauJobAndPostReply...")
 	fmt.Println("Job file link:", jobFileLink)
@@ -127,7 +198,7 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 
 	// Step 2: Dispatch the job
 	fmt.Println("Dispatching job to Bacalhau...")
-	result := bacalhau.CreateJob(jobFile)
+	result := bacalhau.CreateJob(jobFile, DEFAULT_JOB_WAIT_TIME)
 	fmt.Println("CreateJob result:", result)
 
 	// Check if the JobID is empty (failure case)
@@ -247,7 +318,9 @@ func startHTTPServer() {
 	fmt.Printf("Starting HTTP server on port %s\n", port)
 	go func() {
 		if err := http.ListenAndServe(port, nil); err != nil {
-			fmt.Printf("HTTP server failed: %v\n", err)
+			fmt.Printf("HTTP server failed: %s\n", err.Error())
+			fmt.Println("Unexpected condition in application. Exiting.")
+			os.Exit(1)
 		}
 	}()
 }
@@ -259,66 +332,111 @@ func main() {
 		fmt.Println("Could not find .env file. Continuing with existing environment variables.")
 	}
 
-	bsky.Username = os.Getenv("BLUESKY_USER")
-	bsky.Password = os.Getenv("BLUESKY_PASS")
+	BLUESKY_USERS := strings.Split(os.Getenv("BLUESKY_USERS"), ",")
+	BLUESKY_PASSES := strings.Split(os.Getenv("BLUESKY_PASSES"), ",")
 
-	if bsky.Username == "" || bsky.Password == "" {
-		fmt.Println("Missing environment variables. Please set BLUESKY_USER and BLUESKY_PASS.")
+	if len(BLUESKY_USERS) == 0 {
+		fmt.Println("No users set by BLUESKY_USERS environment variable. At least one user handle must be set for the Bacalhau Bluesky Bot to operate.")
+		os.Exit(1)
+	}
+
+	if len(BLUESKY_PASSES) == 0 {
+		fmt.Println("No passwords set by BLUESKY_PASSES environment variable. At least one username/password combination must be set for the Bacalhau Bluesky Bot to operate.")
+		os.Exit(1)
+	}
+
+	if len(BLUESKY_USERS) != len(BLUESKY_PASSES) {
+		fmt.Println( fmt.Sprintf( `The number of BLUESKY_USERS (%d) is not equal to the number of BLUESKY_PASSES (%d) set in environment variables. Please check that you have a password set for each user for the Bacalhau Bluesky Bot to operate.`, len(BLUESKY_USERS), len(BLUESKY_PASSES) ) )
 		os.Exit(1)
 	}
 
 	bacalhau.BACALHAU_HOST = os.Getenv("BACALHAU_HOST")
-	fmt.Printf("Bacalhau Orchestrator Node IP: %s\n", bacalhau.BACALHAU_HOST)
+	fmt.Printf("Bacalhau Orchestrator Hostname: %s\n", bacalhau.BACALHAU_HOST)
 
-	// Authenticate with Bluesky API
-	session, err := bsky.Authenticate(bsky.Username, bsky.Password)
-	if err != nil {
-		fmt.Println("Authentication error:", err)
-		return
-	}
+	if os.Getenv("DEFAULT_JOB_WAIT_TIME") == "" {
+		DEFAULT_JOB_WAIT_TIME = 30
+	} else {
+		
+		waitTime, convErr := strconv.Atoi( os.Getenv("DEFAULT_JOB_WAIT_TIME") )
 
-	startHTTPServer()
-	bsky.StartTime = time.Now()
-
-	// Poll notifications every 10 seconds
-	for {
-		fmt.Println("Fetching notifications...")
-
-		notifications, err := bsky.FetchNotifications(session.AccessJwt)
-		if err != nil {
-			fmt.Println("Error fetching notifications:", err)
-			time.Sleep(10 * time.Second)
-			continue
+		if convErr != nil {
+			fmt.Println(fmt.Sprintf(`An error occured converting DEFAULT_JOB_WAIT_TIME environment variable to an integer. Defaulting to 30 seconds: %s`, convErr.Error()))
+			DEFAULT_JOB_WAIT_TIME = 30
+		} else {
+			DEFAULT_JOB_WAIT_TIME = waitTime
 		}
 
-		for _, notif := range notifications {
-			// Process only "mention" notifications if they match a command
-			isPostACommand, postComponents, commandType, className := bacalhau.CheckPostIsCommand(notif.Record.Text, bsky.Username)
-			if notif.Reason == "mention" && bsky.ShouldRespond(notif) && !bsky.HasResponded(notif.Uri) && isPostACommand {
-				fmt.Printf("Command detected: %s\n", notif.Record.Text)
+	}
 
-				// Acknowledge job request
-				acknowledgeJobRequest := "We got your job and we're running it now!\n\n" +
-					"You should get results in a few seconds while we let it run, so hold tight and check your notifications!"
-				go sendReply(session, notif, acknowledgeJobRequest)
+	// Start HTTP server for healthchecks
+	go startHTTPServer()
 
-				// Dispatch the appropriate job
-				switch commandType {
-					case "job_file":
-						go dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
-					case "classify_image":
-						go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, false, false, className)
-					case "hotdog":
-						go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, false, className)
-					case "arbitraryClass":
-						go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, true, className)
+	bsky.StartTime = time.Now()
+
+	for {
+
+		for idx, bskyHandle := range BLUESKY_USERS {
+
+			fmt.Printf("Attempting to authenticate for user: %s\n", bskyHandle)
+
+			go func(username, password string) {
+
+				// Authenticate with Bluesky API
+				session, err := bsky.Authenticate(username, password)
+				if err != nil {
+					fmt.Println( fmt.Sprintf(`Could not authenticate "%s": %s`, username, err.Error()) )
+					return
 				}
 
-				fmt.Printf("Dispatched jobs and responses to mention: %s\n", notif.Record.Text)
-				bsky.RecordResponse(notif.Uri) // Record the original mention
-			}
+				fmt.Println( fmt.Sprintf(`Fetching notifications for handle "%s"...`, bskyHandle) )
+
+				notifications, err := bsky.FetchNotifications(session.AccessJwt)
+				if err != nil {
+					fmt.Printf("Error fetching notifications for handle %s: %s\n", bskyHandle, err.Error())
+					time.Sleep(10 * time.Second)
+					return
+				}
+
+				for _, notif := range notifications {
+					// Process only "mention" notifications if they match a command
+					isPostACommand, postComponents, commandType, className := bacalhau.CheckPostIsCommand(notif.Record.Text, username)
+					if notif.Reason == "mention" && bsky.ShouldRespond(notif) && !bsky.HasResponded(notif.Uri) && isPostACommand {
+						fmt.Printf("Command detected: %s\n", notif.Record.Text)
+
+						// Acknowledge job request
+						acknowledgeJobRequest := "We got your job and we're running it now!\n\n" +
+							"You should get results in a few seconds while we let it run, so hold tight and check your notifications!"
+						go sendReply(session, notif, acknowledgeJobRequest)
+
+						// Dispatch the appropriate job
+						switch commandType {
+							case "job_file":
+								go dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
+							case "classify_image":
+								go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, false, false, className)
+							case "hotdog":
+								go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, false, className)
+							case "arbitraryClass":
+								go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, true, className)
+							case "altText":
+								go dispatchAltTextJobAndPostReply(session, notif)
+						}
+
+						fmt.Printf("Dispatched jobs and responses to mention: %s\n", notif.Record.Text)
+						bsky.RecordResponse(notif.Uri)
+
+					}
+
+				}
+
+			}(bskyHandle, BLUESKY_PASSES[idx])
+
 		}
 
 		time.Sleep(10 * time.Second)
+		fmt.Println("Waiting 10 seconds...")
+
 	}
+
+
 }

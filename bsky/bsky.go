@@ -41,8 +41,15 @@ type Record struct {
 	Text      string  `json:"text,omitempty"`
 	CreatedAt string  `json:"createdAt"`
 	Facets    []Facet `json:"facets,omitempty"`
-	Embed     *Embed  `json:"embed,omitempty"` // Change from []Embed to *Embed
+	Embed     *Embed  `json:"embed,omitempty"`
+	Reply     *Reply  `json:"reply,omitempty"` // Add this line
 }
+
+type Reply struct {
+	Root   map[string]string `json:"root"`
+	Parent map[string]string `json:"parent"`
+}
+
 
 type Facet struct {
 	Type     string    `json:"$type"`
@@ -84,8 +91,6 @@ type PostComponents struct {
 	Url string
 }
 
-var Username string
-var Password string
 var blueskyAPIBase = "https://bsky.social/xrpc"
 var StartTime time.Time
 var RespondedFile = "responded_to.txt"
@@ -366,6 +371,58 @@ func ReplyToMention(jwt string, notif Notification, text string, userDid string)
 
 	return "", fmt.Errorf("response URI not found")
 }
+
+func GetRepliedToPost(jwt string, notif Notification) (*Notification, error) {
+	// Ensure the notification has a reply reference
+	if notif.Record.Reply == nil {
+		return nil, fmt.Errorf("notification is not a reply")
+	}
+
+	// Construct the URL to fetch the parent post
+	parentUri := notif.Record.Reply.Parent["uri"]
+	url := fmt.Sprintf("%s/app.bsky.feed.getPostThread?uri=%s", blueskyAPIBase, parentUri)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+jwt)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch post: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := ioutil.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to fetch post, status code: %d, response: %s", resp.StatusCode, string(respBody))
+	}
+
+	// Parse the response
+	var response struct {
+		Thread struct {
+			Post Notification `json:"post"`
+		} `json:"thread"`
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&response)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	parentPost := &response.Thread.Post
+
+	// Extract image URL if present
+	if parentPost.Record.Embed != nil && parentPost.Record.Embed.Type == "app.bsky.embed.images" && len(parentPost.Record.Embed.Images) > 0 {
+		imageRef := parentPost.Record.Embed.Images[0].Image.Ref["$link"]
+		parentPost.ImageURL = fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", parentPost.Author.Did, imageRef)
+	}
+
+	return parentPost, nil
+}
+
 
 
 func ProcessNotifications(notifications []Notification) []Notification {
