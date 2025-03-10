@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"strconv"
 
 	"bbb/bacalhau"
 	"bbb/bsky"
@@ -16,6 +17,8 @@ import (
 
 	"github.com/joho/godotenv"
 )
+
+var DEFAULT_JOB_WAIT_TIME int
 
 func uploadResultAndGetPublicURL(key, result string) (string, error) {
 	bucketName := os.Getenv("RESULTS_BUCKET")
@@ -44,7 +47,7 @@ func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Not
 	bTest, bErr := bacalhau.GenerateClassificationJob(imageURL, isHotDogJob, className)
 	fmt.Println("Classification job specification, error:", bTest, bErr)
 
-	result := bacalhau.CreateJob(bTest)
+	result := bacalhau.CreateJob(bTest, DEFAULT_JOB_WAIT_TIME)
 	fmt.Println("Classification Job result:", result)
 	fmt.Println("JobID:", result.JobID)
 	fmt.Println("ExecutionID:", result.ExecutionID)
@@ -126,7 +129,7 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 
 	fmt.Println("Job file JSON:", job)
 
-	result := bacalhau.CreateJob(job)
+	result := bacalhau.CreateJob(job, 10)
 	fmt.Println("Alt-text result:", result)
 	fmt.Println("JobID:", result.JobID)
 	fmt.Println("ExecutionID:", result.ExecutionID)
@@ -183,7 +186,7 @@ func dispatchBacalhauJobAndPostReply(session *bsky.Session, notif bsky.Notificat
 
 	// Step 2: Dispatch the job
 	fmt.Println("Dispatching job to Bacalhau...")
-	result := bacalhau.CreateJob(jobFile)
+	result := bacalhau.CreateJob(jobFile, DEFAULT_JOB_WAIT_TIME)
 	fmt.Println("CreateJob result:", result)
 
 	// Check if the JobID is empty (failure case)
@@ -333,11 +336,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("BLUESKY_USERS:", BLUESKY_USERS)
-	fmt.Println("BLUESKY_PASSES:", BLUESKY_PASSES)
-
 	bacalhau.BACALHAU_HOST = os.Getenv("BACALHAU_HOST")
 	fmt.Printf("Bacalhau Orchestrator Hostname: %s\n", bacalhau.BACALHAU_HOST)
+
+	if os.Getenv("DEFAULT_JOB_WAIT_TIME") == "" {
+		DEFAULT_JOB_WAIT_TIME = 30
+	} else {
+		
+		waitTime, convErr := strconv.Atoi( os.Getenv("DEFAULT_JOB_WAIT_TIME") )
+
+		if convErr != nil {
+			fmt.Println(fmt.Sprintf(`An error occured converting DEFAULT_JOB_WAIT_TIME environment variable to an integer. Defaulting to 30 seconds: %s`, convErr.Error()))
+			DEFAULT_JOB_WAIT_TIME = 30
+		} else {
+			DEFAULT_JOB_WAIT_TIME = waitTime
+		}
+
+	}
 
 	// Start HTTP server for healthchecks
 	go startHTTPServer()

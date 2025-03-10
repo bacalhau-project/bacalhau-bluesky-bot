@@ -264,7 +264,7 @@ func GenerateAltTextJob(imageURL string) (string, error) {
 
 }
 
-func CreateJob(jobSpec string) JobExecutionResult {
+func CreateJob(jobSpec string, timeToWaitForResults int) JobExecutionResult {
 
 	var token string
 	var tokenErr error
@@ -335,9 +335,10 @@ func CreateJob(jobSpec string) JobExecutionResult {
 
 	fmt.Printf("Job created successfully with ID: %s\n", response.JobID)
 
-	// Wait for 20 seconds
-	fmt.Println("Waiting for 30 seconds before querying executions...")
-	time.Sleep(30 * time.Second)
+	// Wait for a given period before retrieving results...
+	fmt.Println(fmt.Sprintf(`Waiting for %d seconds before querying executions for Job "%s"...`, timeToWaitForResults, response.JobID))
+	waitTime := time.Duration(timeToWaitForResults) * time.Second
+	time.Sleep(waitTime)
 
 	executionsURL := fmt.Sprintf("%s/api/v1/orchestrator/jobs/%s/executions", orchestratorURL, response.JobID)
 	fmt.Println("executionsURL:", executionsURL)
@@ -382,13 +383,6 @@ func CreateJob(jobSpec string) JobExecutionResult {
 		fmt.Printf("No executions found for JobID: %s\n", response.JobID)
 		return JobExecutionResult{}
 	}
-
-	// firstExecution := executionsResponse.Items[0]
-	// return JobExecutionResult{
-	// 	JobID:       response.JobID,
-	// 	ExecutionID: firstExecution.ID,
-	// 	Stdout:      firstExecution.RunOutput.Stdout,
-	// }
 
 	chosenJobToReturn := JobExecutionResult{
 		JobID: response.JobID,
