@@ -404,8 +404,7 @@ func main() {
 						fmt.Printf("Command detected: %s\n", notif.Record.Text)
 
 						// Acknowledge job request
-						acknowledgeJobRequest := "We got your job and we're running it now!\n\n" +
-							"You should get results in a few seconds while we let it run, so hold tight and check your notifications!"
+						// acknowledgeJobRequest := "We got your job and we're running it now!\n\n" + "You should get results in a few seconds while we let it run, so hold tight and check your notifications!"
 						// go sendReply(session, notif, acknowledgeJobRequest)
 
 						// Dispatch the appropriate job
