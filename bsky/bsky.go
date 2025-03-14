@@ -23,33 +23,66 @@ type NotificationResponse struct {
 }
 
 type Notification struct {
-	Uri       string `json:"uri"`
-	Cid       string `json:"cid"`
-	Author    Author `json:"author"`
-	Reason    string `json:"reason"`
-	Record    Record `json:"record"`
-	IndexedAt string `json:"indexedAt"`
-	ImageURL  string `json:"imageURL"`
+	Uri       string    `json:"uri"`
+	Cid       string    `json:"cid"`
+	Author    Author    `json:"author"`
+	Reason    string    `json:"reason"`
+	Record    Record    `json:"record"`
+	IndexedAt string    `json:"indexedAt"`
+	ImageURL  string    `json:"imageURL,omitempty"`
+	Post      Post      `json:"post,omitempty"`
+	IsRead    bool      `json:"isRead"`
+	Labels    []Label   `json:"labels"`
 }
 
 type Author struct {
-	Handle string `json:"handle"`
-	Did    string `json:"did"`
+	Did         string   `json:"did"`
+	Handle      string   `json:"handle"`
+	DisplayName string   `json:"displayName"`
+	Avatar      string   `json:"avatar"`
+	Viewer      Viewer   `json:"viewer"`
+	Labels      []Label  `json:"labels"`
+	CreatedAt   string   `json:"createdAt"`
+	Description string   `json:"description"`
+	IndexedAt   string   `json:"indexedAt"`
+}
+
+type Viewer struct {
+	Muted      bool   `json:"muted"`
+	BlockedBy  bool   `json:"blockedBy"`
+	FollowedBy string `json:"followedBy"`
+}
+
+type Post struct {
+	Uri      string  `json:"uri"`
+	Cid      string  `json:"cid"`
+	Author   Author  `json:"author"`
+	Record   Record  `json:"record"`
+	IndexedAt string `json:"indexedAt"`
+	Images   []Image `json:"images,omitempty"`
+	PostType string  `json:"postType"` // e.g., reply, quote, or post
+	QuoteRef string  `json:"quoteRef"`
 }
 
 type Record struct {
-	Text      string  `json:"text,omitempty"`
-	CreatedAt string  `json:"createdAt"`
-	Facets    []Facet `json:"facets,omitempty"`
-	Embed     *Embed  `json:"embed,omitempty"`
+	Type       string    `json:"$type"`
+	CreatedAt  string    `json:"createdAt"`
+	Embed      *Embed    `json:"embed,omitempty"`
+	Facets     []Facet   `json:"facets,omitempty"`
+	Langs      []string  `json:"langs,omitempty"`
+	Text       string    `json:"text,omitempty"`
 	Reply     *Reply  `json:"reply,omitempty"` // Add this line
+
+}
+
+type Quote struct {
+	QuotedPost Post `json:"quotedPost"`
 }
 
 type Reply struct {
 	Root   map[string]string `json:"root"`
 	Parent map[string]string `json:"parent"`
 }
-
 
 type Facet struct {
 	Type     string    `json:"$type"`
@@ -59,11 +92,18 @@ type Facet struct {
 
 type Embed struct {
 	Type   string  `json:"$type"`
+	Record *EmbedRecord `json:"record,omitempty"`
 	Images []Image `json:"images,omitempty"`
+}
+
+type EmbedRecord struct {
+	Cid string `json:"cid"`
+	Uri string `json:"uri"`
 }
 
 type Image struct {
 	Alt         string   `json:"alt"`
+	Url         string
 	AspectRatio struct {
 		Height int `json:"height"`
 		Width  int `json:"width"`
@@ -78,12 +118,17 @@ type Image struct {
 
 type Feature struct {
 	Type string `json:"$type"`
-	URI  string `json:"uri,omitempty"` // For #link features
+	Did  string `json:"did,omitempty"`
+	Uri  string `json:"uri,omitempty"`
 }
 
 type Index struct {
 	ByteStart int `json:"byteStart"`
 	ByteEnd   int `json:"byteEnd"`
+}
+
+type Label struct {
+	Type string `json:"$type"`
 }
 
 type PostComponents struct {
@@ -158,6 +203,14 @@ func FetchNotifications(jwt string) ([]Notification, error) {
 	if err := json.Unmarshal(respBody, &notificationResponse); err != nil {
 		return nil, err
 	}
+
+	// b, err := json.MarshalIndent(notificationResponse, "", "    ")
+	// if err != nil {
+	// 	// log.Fatal(err)
+	// 	os.Exit(1)
+	// }
+
+	// fmt.Println(string(b))
 
 	// Print raw response for debugging
 	// fmt.Println("Raw:", string(respBody))
@@ -372,13 +425,12 @@ func ReplyToMention(jwt string, notif Notification, text string, userDid string)
 	return "", fmt.Errorf("response URI not found")
 }
 
-func GetRepliedToPost(jwt string, notif Notification) (*Notification, error) {
-	// Ensure the notification has a reply reference
+func GetRepliedToPost(jwt string, notif Notification) (*Post, error) {
+
 	if notif.Record.Reply == nil {
 		return nil, fmt.Errorf("notification is not a reply")
 	}
 
-	// Construct the URL to fetch the parent post
 	parentUri := notif.Record.Reply.Parent["uri"]
 	url := fmt.Sprintf("%s/app.bsky.feed.getPostThread?uri=%s", blueskyAPIBase, parentUri)
 
@@ -400,7 +452,6 @@ func GetRepliedToPost(jwt string, notif Notification) (*Notification, error) {
 		return nil, fmt.Errorf("failed to fetch post, status code: %d, response: %s", resp.StatusCode, string(respBody))
 	}
 
-	// Parse the response
 	var response struct {
 		Thread struct {
 			Post Notification `json:"post"`
@@ -412,70 +463,150 @@ func GetRepliedToPost(jwt string, notif Notification) (*Notification, error) {
 		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	parentPost := &response.Thread.Post
+	// Build the Post struct from the Notification data
+	parentNotification := response.Thread.Post
+	parentPost := &Post{
+		Uri:       parentNotification.Uri,
+		Cid:       parentNotification.Cid,
+		Author:    parentNotification.Author,
+		Record:    parentNotification.Record,
+		IndexedAt: parentNotification.IndexedAt,
+		PostType:  "post",
+	}
 
-	// Extract image URL if present
-	if parentPost.Record.Embed != nil && parentPost.Record.Embed.Type == "app.bsky.embed.images" && len(parentPost.Record.Embed.Images) > 0 {
-		imageRef := parentPost.Record.Embed.Images[0].Image.Ref["$link"]
-		parentPost.ImageURL = fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", parentPost.Author.Did, imageRef)
+	// Determine the post type (reply, quote, or standalone post)
+	if parentNotification.Record.Reply != nil {
+		parentPost.PostType = "reply"
+	}
+	if parentNotification.Record.Embed != nil && parentNotification.Record.Embed.Type == "app.bsky.embed.record" {
+		parentPost.PostType = "quote"
+	}
+
+	// Extract and set image URLs if present
+	if parentNotification.Record.Embed != nil && parentNotification.Record.Embed.Type == "app.bsky.embed.images" {
+		for _, img := range parentNotification.Record.Embed.Images {
+			imageRef := img.Image.Ref["$link"]
+			img.Url = fmt.Sprintf(
+				"https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg",
+				parentNotification.Author.Did,
+				imageRef,
+			)
+			parentPost.Images = append(parentPost.Images, img)
+		}
 	}
 
 	return parentPost, nil
+
 }
 
+func GetPostByUri(jwt string, postUri string) (*Post, error) {
+	url := fmt.Sprintf("%s/app.bsky.feed.getPosts?uris=%s", blueskyAPIBase, postUri)
 
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+jwt)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch post: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := ioutil.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to fetch post, status code: %d, response: %s", resp.StatusCode, string(respBody))
+	}
+
+	var response struct {
+		Posts []Notification `json:"posts"`
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&response)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	if len(response.Posts) == 0 {
+		return nil, fmt.Errorf("no post found for URI: %s", postUri)
+	}
+
+	// Build the Post struct from the Notification data
+	fetchedNotification := response.Posts[0]
+	post := &Post{
+		Uri:       fetchedNotification.Uri,
+		Cid:       fetchedNotification.Cid,
+		Author:    fetchedNotification.Author,
+		Record:    fetchedNotification.Record,
+		IndexedAt: fetchedNotification.IndexedAt,
+		PostType:  "post",
+	}
+
+	// Determine the post type (reply, quote, or standalone post)
+	if fetchedNotification.Record.Reply != nil {
+		post.PostType = "reply"
+	}
+	if fetchedNotification.Record.Embed != nil && fetchedNotification.Record.Embed.Type == "app.bsky.embed.record" {
+		post.PostType = "quote"
+		post.QuoteRef = fetchedNotification.Record.Embed.Record.Uri
+	}
+
+	// Extract and set image URLs if present
+	if fetchedNotification.Record.Embed != nil && fetchedNotification.Record.Embed.Type == "app.bsky.embed.images" {
+		for _, img := range fetchedNotification.Record.Embed.Images {
+			imageRef := img.Image.Ref["$link"]
+			img.Url = fmt.Sprintf(
+				"https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg",
+				fetchedNotification.Author.Did,
+				imageRef,
+			)
+			post.Images = append(post.Images, img)
+		}
+	}
+
+	return post, nil
+}
 
 func ProcessNotifications(notifications []Notification) []Notification {
-	
 	for i, notif := range notifications {
+		notif.Post = Post{
+			Uri:       notif.Uri,
+			Cid:       notif.Cid,
+			Author:    notif.Author,
+			Record:    notif.Record,
+			IndexedAt: notif.IndexedAt,
+			PostType:  "post",
+			QuoteRef:  "",
+		}
 
-		if notif.Record.Text != "" && notif.Record.Facets != nil {
+		if notif.Record.Reply != nil {
+			notif.Post.PostType = "reply"
+		}
 
-			for _, facet := range notif.Record.Facets {
-
-				for _, feature := range facet.Features {
-
-					if feature.Type == "app.bsky.richtext.facet#link" {
-						start := facet.Index.ByteStart
-						end := facet.Index.ByteEnd
-
-						// Replace the substring in text with the link's URI
-						notif.Record.Text = notif.Record.Text[:start] + feature.URI + notif.Record.Text[end:]
-					}
-
-				}
-
-			}
-
+		if notif.Record.Embed != nil && notif.Record.Embed.Type == "app.bsky.embed.record" {
+			notif.Post.PostType = "quote"
 		}
 
 		if notif.Record.Embed != nil && notif.Record.Embed.Type == "app.bsky.embed.images" {
-
-			if len(notif.Record.Embed.Images) > 0 {
-
-				firstImage := notif.Record.Embed.Images[0] // Access the first image
-				imageRef := firstImage.Image.Ref["$link"]
-
-				// Construct the image URL
+			for _, img := range notif.Record.Embed.Images {
+				imageRef := img.Image.Ref["$link"]
 				imageURL := fmt.Sprintf(
 					"https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg",
 					notif.Author.Did,
 					imageRef,
 				)
-
-				// Add the generated image URL to the notification
-				notif.ImageURL = imageURL
-
+				img.Url = imageURL
+				notif.Post.Images = append(notif.Post.Images, img)
+				// notif.ImageURL = imageURL
 			}
-
 		}
 
-		// Update the notification in the list
 		notifications[i] = notif
 	}
 
 	return notifications
-
 }
 
 func ShouldRespond(notif Notification) bool {

@@ -246,8 +246,6 @@ func GenerateAltTextJob(imageURL string) (string, error) {
 
 	params["EnvironmentVariables"] = envVars
 
-	fmt.Println("TASKS:", tasks)
-
 	// Wrap the updated YAML content into the final JSON structure
 	wrappedContent := map[string]interface{}{
 		"Job": yamlContent,
