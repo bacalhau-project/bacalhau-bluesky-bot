@@ -1,13 +1,14 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 	"strconv"
+	"net/http"
+	"encoding/json"
+	"math/rand"
 
 	"bbb/bacalhau"
 	"bbb/bsky"
@@ -19,6 +20,23 @@ import (
 )
 
 var DEFAULT_JOB_WAIT_TIME int
+
+func generateFailureResponseAndReply() string { 
+
+	var possibleErrorResponses = []string{
+		"Sorry! Something went wrong with the bot! Please try again later",
+		"Oh no! Something didn't work right with this bot! Sorry!",
+		"This bot experienced an error trying to respond to you - apologies! Please try again in a bit.",
+		"Something didn't quite work as expected. Sorry! Please try again in a little while.",
+	}
+
+	selectedErrorResponse := possibleErrorResponses[rand.Intn(len(possibleErrorResponses))]
+
+	fmt.Println("selectedErrorResponse:", selectedErrorResponse)
+
+	return selectedErrorResponse
+
+}
 
 func uploadResultAndGetPublicURL(key, result string) (string, error) {
 	bucketName := os.Getenv("RESULTS_BUCKET")
@@ -112,34 +130,77 @@ func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Not
 
 func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notification) {
 
-	parentPost, pPostErr := bsky.GetRepliedToPost(session.AccessJwt, notif)
+	// 1. Image in post
+	// 2. Image in quoted post
+	// 3. Image in parent post
+	// 4. None.
 
-	if pPostErr != nil {
-		fmt.Printf("Parent Post err: %s\n", pPostErr.Error())
-		errorResponseTxt := "Sorry, we weren't able to get that post to generate alt-text. Please try again later!"
-		sendReply(session, notif, errorResponseTxt)
-		return
+	var imageToGenerateAltTextFor string
+
+	if notif.Post.PostType == "reply" {
+
+		parentPost, pPostErr := bsky.GetRepliedToPost(session.AccessJwt, notif)
+
+		if pPostErr != nil {
+			fmt.Printf("Parent Post err: %s\n", pPostErr.Error())
+		}
+
+		fmt.Printf("Parent Post: %+v\n", parentPost)
+
+		if len(parentPost.Images) > 0 {
+			imageToGenerateAltTextFor = parentPost.Images[0].Url
+		} else {
+			// Handle no images being present
+			return
+		}
+
 	}
 
-	fmt.Printf("Parent Post: %+v\n", parentPost)
-	fmt.Printf("Parent Post Image: %s\n", parentPost.ImageURL)
+	if notif.Post.PostType == "quote" {
 
-	if parentPost.ImageURL == "" {
-		errorResponseTxt := "Sorry, we weren't able to to find an image in that post to generate alt-text. Please try again later!"
-		sendReply(session, notif, errorResponseTxt)
-		return
+		fmt.Println("Nested Post:", notif.Record.Embed.Record.Uri)
+
+		nestedPost, nPErr := bsky.GetPostByUri(session.AccessJwt, notif.Record.Embed.Record.Uri)
+
+		if nPErr != nil {
+			fmt.Println("nPErr:", nPErr.Error())
+			failureResponse := generateFailureResponseAndReply()
+			sendReply(session, notif, failureResponse)
+			return
+		} else {
+
+			if len(nestedPost.Images) > 0 {
+				imageToGenerateAltTextFor = nestedPost.Images[0].Url
+			} else {
+				// Handle no images being present
+			}
+
+		}
+
 	}
 
-	job, jErr := bacalhau.GenerateAltTextJob(parentPost.ImageURL)
+	if notif.Post.PostType == "post" {
+
+		if len(notif.Post.Images) > 0 {
+			fmt.Println("Image in post:", notif.Post.Images[0].Url)
+			imageToGenerateAltTextFor = notif.Post.Images[0].Url
+		} else {
+			// Handle no images being present
+		}
+
+	}
+
+	fmt.Println("Determined type:", notif.Post.PostType)
+	fmt.Println("Selected Image:", imageToGenerateAltTextFor)
+
+	job, jErr := bacalhau.GenerateAltTextJob(imageToGenerateAltTextFor)
 
 	if jErr != nil {
 		fmt.Printf("Could not generate alt-text Job file: %s", jErr.Error())
-		errorResponseTxt := "Sorry, something went wrong with the Bot! Please try again later!"
-		sendReply(session, notif, errorResponseTxt)
+		failureResponse := generateFailureResponseAndReply()
+		sendReply(session, notif, failureResponse)
 		return
 	}
-
-	fmt.Println("Job file JSON:", job)
 
 	result := bacalhau.CreateJob(job, 10)
 	fmt.Println("Alt-text result:", result)
