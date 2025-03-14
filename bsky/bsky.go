@@ -362,6 +362,24 @@ func ReplyToMention(jwt string, notif Notification, text string, userDid string)
 		})
 	}
 
+	// Identify the correct 'root' and 'parent'
+	var rootUri, rootCid string
+	var parentUri, parentCid string
+
+	// If this notification itself is a reply, extract the root
+	if notif.Record.Reply != nil {
+		rootUri = notif.Record.Reply.Root["uri"]
+		rootCid = notif.Record.Reply.Root["cid"]
+		parentUri = notif.Uri
+		parentCid = notif.Cid
+	} else {
+		// Otherwise, it's a top-level post — set itself as both root and parent
+		rootUri = notif.Uri
+		rootCid = notif.Cid
+		parentUri = notif.Uri
+		parentCid = notif.Cid
+	}
+
 	// Construct the payload with optional facets
 	payload := map[string]interface{}{
 		"collection": "app.bsky.feed.post",
@@ -372,12 +390,12 @@ func ReplyToMention(jwt string, notif Notification, text string, userDid string)
 			"createdAt": time.Now().Format(time.RFC3339),
 			"reply": map[string]interface{}{
 				"root": map[string]string{
-					"uri": notif.Uri,
-					"cid": notif.Cid,
+					"uri": rootUri,
+					"cid": rootCid,
 				},
 				"parent": map[string]string{
-					"uri": notif.Uri,
-					"cid": notif.Cid,
+					"uri": parentUri,
+					"cid": parentCid,
 				},
 			},
 		},
@@ -424,6 +442,7 @@ func ReplyToMention(jwt string, notif Notification, text string, userDid string)
 
 	return "", fmt.Errorf("response URI not found")
 }
+
 
 func GetRepliedToPost(jwt string, notif Notification) (*Post, error) {
 
