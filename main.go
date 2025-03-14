@@ -21,7 +21,7 @@ import (
 
 var DEFAULT_JOB_WAIT_TIME int
 
-func generateFailureResponseAndReply() string { 
+func generateFailureResponse() string { 
 
 	var possibleErrorResponses = []string{
 		"Sorry! Something went wrong with the bot! Please try again later",
@@ -135,6 +135,14 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 	// 3. Image in parent post
 	// 4. None.
 
+	var possibleResponsesForMissingImages = []string{
+		"It doesn't look like there were any images that we could generate alt-text for in that post. Sorry!",
+		"Couldn't find any images to generate alt-text for. Sorry!",
+		"Hmmm... the bot couldn't pick out any image to generate alt-text for in your request. Please try again. Sorry!",
+	}
+
+	selectedEmptyResponse := possibleResponsesForMissingImages[rand.Intn(len(possibleResponsesForMissingImages))]
+
 	var imageToGenerateAltTextFor string
 
 	if notif.Post.PostType == "reply" {
@@ -151,6 +159,7 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 			imageToGenerateAltTextFor = parentPost.Images[0].Url
 		} else {
 			// Handle no images being present
+			sendReply(session, notif, selectedEmptyResponse)
 			return
 		}
 
@@ -164,7 +173,7 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 
 		if nPErr != nil {
 			fmt.Println("nPErr:", nPErr.Error())
-			failureResponse := generateFailureResponseAndReply()
+			failureResponse := generateFailureResponse()
 			sendReply(session, notif, failureResponse)
 			return
 		} else {
@@ -173,6 +182,8 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 				imageToGenerateAltTextFor = nestedPost.Images[0].Url
 			} else {
 				// Handle no images being present
+				sendReply(session, notif, selectedEmptyResponse)
+				return
 			}
 
 		}
@@ -186,6 +197,8 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 			imageToGenerateAltTextFor = notif.Post.Images[0].Url
 		} else {
 			// Handle no images being present
+			sendReply(session, notif, selectedEmptyResponse)
+			return
 		}
 
 	}
@@ -197,7 +210,7 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 
 	if jErr != nil {
 		fmt.Printf("Could not generate alt-text Job file: %s", jErr.Error())
-		failureResponse := generateFailureResponseAndReply()
+		failureResponse := generateFailureResponse()
 		sendReply(session, notif, failureResponse)
 		return
 	}
@@ -212,7 +225,7 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 
 		fmt.Printf(`Job "%s" failed to produce alt-text in the permitted timeframe.`, result.JobID)
 
-		errorResponseTxt := "Sorry, we weren't able to generate alt-text for that image. Please try again later!"
+		errorResponseTxt := generateFailureResponse()
 		sendReply(session, notif, errorResponseTxt)
 
 	} else {
