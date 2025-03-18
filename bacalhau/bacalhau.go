@@ -219,7 +219,7 @@ func GenerateClassificationJob(imageURL string, isHotDogJob bool, className stri
 
 }
 
-func GenerateAltTextJob(imageURL string) (string, error) {
+func GenerateAltTextJob(imageURL, prompt string) (string, error) {
 
 	jobFileTemplate, jtErr := os.ReadFile("./alt_text_job.yaml")
 	if jtErr != nil {
@@ -242,6 +242,7 @@ func GenerateAltTextJob(imageURL string) (string, error) {
 		fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", os.Getenv("AWS_ACCESS_KEY_ID")),
 		fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", os.Getenv("AWS_SECRET_ACCESS_KEY")),
 		fmt.Sprintf("S3_BUCKET=%s", os.Getenv("S3_IMAGE_BUCKET")),
+		fmt.Sprintf("PROMPT_TEXT=%s", prompt),
 	}
 
 	params["EnvironmentVariables"] = envVars

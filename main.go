@@ -206,7 +206,13 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 	fmt.Println("Determined type:", notif.Post.PostType)
 	fmt.Println("Selected Image:", imageToGenerateAltTextFor)
 
-	job, jErr := bacalhau.GenerateAltTextJob(imageToGenerateAltTextFor)
+	prompt := os.Getenv("ALT_TEXT_JOB_PROMPT")
+
+	if prompt == "" {
+		prompt = "Briefly, what is in this image?"
+	}
+
+	job, jErr := bacalhau.GenerateAltTextJob(imageToGenerateAltTextFor, prompt)
 
 	if jErr != nil {
 		fmt.Printf("Could not generate alt-text Job file: %s", jErr.Error())
