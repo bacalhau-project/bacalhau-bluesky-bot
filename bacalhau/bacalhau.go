@@ -444,6 +444,7 @@ func CreateJob(jobSpec string, timeToWaitForResults int) JobExecutionResult {
 
 	if resultErr != nil {
 		fmt.Println( fmt.Sprintf(`Failed to get results for JobID "%s": %s`, response.JobID, resultErr) )
+		go StopJob(response.JobID, "Failed to get results in allotted timeframe.", false)
 		return JobExecutionResult{}
 	}
 
