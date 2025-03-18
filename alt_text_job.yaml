@@ -6,7 +6,7 @@ Tasks:
     Engine:
       Type: docker
       Params:
-        Image: seanmtracey/alt-llava:bytes
+        Image: seanmtracey/alt-llava:silent
         EnvironmentVariables:
           - IMAGE_URL=https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:hw7is7jjkrz2alyls4zqqjiy/bafkreifld7yzgywmtl6ctuafs2vyoq7o3cbldz7mog5dkte7ugskx2p22a@jpeg
           - SILENT_OUTPUT=true
