@@ -212,6 +212,8 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 		prompt = "Briefly, what is in this image?"
 	}
 
+	fmt.Println("Prompt Text:", prompt)
+
 	job, jErr := bacalhau.GenerateAltTextJob(imageToGenerateAltTextFor, prompt)
 
 	if jErr != nil {
