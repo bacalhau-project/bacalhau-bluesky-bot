@@ -523,11 +523,16 @@ func startHTTPServer() {
 				imageURL = ""
 			}
 
-			return c.Render("alt-text", fiber.Map{
+			content := fiber.Map{
 				"LVM_TEXT" : altText,
-				"OCR_TEXT" : ocrText,
 				"IMAGE_URL" : imageURL,
-			}, "layouts/main")
+			}
+
+			if ocrText != "" {
+				content["OCR_TEXT"] = ocrText
+			}
+
+			return c.Render("alt-text", content, "layouts/main")
 
 		}
 
