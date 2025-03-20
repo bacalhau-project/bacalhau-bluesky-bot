@@ -263,6 +263,49 @@ func GenerateAltTextJob(imageURL, prompt string) (string, error) {
 
 }
 
+func GenerateOCRJob(imageURL string) (string, error) {
+
+	jobFileTemplate, jtErr := os.ReadFile("./ocr_job.yaml")
+	if jtErr != nil {
+		return "", fmt.Errorf("an error occurred reading the ocr_job.yaml file: %w", jtErr)
+	}
+
+	// Parse the YAML into a generic map
+	var yamlContent map[string]interface{}
+	if err := yaml.Unmarshal(jobFileTemplate, &yamlContent); err != nil {
+		return "", fmt.Errorf("an error occurred parsing the YAML file: %w", err)
+	}
+
+	// Add or update the IMAGE environment variable manually
+	tasks := yamlContent["Tasks"].([]interface{})
+	firstTask := tasks[0].(map[string]interface{})
+	engine := firstTask["Engine"].(map[string]interface{})
+	params := engine["Params"].(map[string]interface{})
+	envVars := []string{
+		fmt.Sprintf("IMAGE_URL=%s", imageURL),
+		fmt.Sprintf("AWS_REGION=%s", os.Getenv("AWS_REGION")),
+		fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", os.Getenv("AWS_ACCESS_KEY_ID")),
+		fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", os.Getenv("AWS_SECRET_ACCESS_KEY")),
+	}
+
+	params["EnvironmentVariables"] = envVars
+
+	// Wrap the updated YAML content into the final JSON structure
+	wrappedContent := map[string]interface{}{
+		"Job": yamlContent,
+	}
+
+	// Convert the map to JSON
+	jsonContent, err := json.MarshalIndent(wrappedContent, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("an error occurred converting YAML to JSON: %w", err)
+	}
+
+	// Return the JSON string
+	return string(jsonContent), nil
+
+}
+
 func GetResultsForJob(jobID string) (JobExecutionResult, error) {
 
 	var token string
