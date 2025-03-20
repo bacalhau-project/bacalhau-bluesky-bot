@@ -2,15 +2,19 @@
 
     <section>
 
+        {{#if LVM_TEXT}}
         <article>
             <h2>Large Vision Model Description</h2>
             {{{LVM_TEXT}}}
         </article>
+        {{/if}}
 
-        {{!-- <article>
+        {{#if OCR_TEXT}}
+        <article>
             <h2>Text extracted via OCR</h2>
             {{{OCR_TEXT}}}
-        </article> --}}
+        </article>
+        {{/if}}
 
     </section>
 
