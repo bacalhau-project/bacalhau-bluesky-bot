@@ -506,10 +506,25 @@ func startHTTPServer() {
 
 			fmt.Println(jsonObj["ALT_TEXT"].(string))
 
+			altText, altTextOk := jsonObj["ALT_TEXT"].(string)
+			ocrText, ocrTextOk := jsonObj["OCR_TEXT"].(string)
+			imageURL, imageURLOk := jsonObj["IMAGE_URL"].(string)
+
+			// Handle missing or invalid values
+			if !altTextOk {
+				altText = "" // Default to an empty string or handle it as needed
+			}
+			if !ocrTextOk {
+				ocrText = ""
+			}
+			if !imageURLOk {
+				imageURL = ""
+			}
+
 			return c.Render("alt-text", fiber.Map{
-				"LVM_TEXT" : jsonObj["ALT_TEXT"].(string),
-				"OCR_TEXT" : jsonObj["OCR_TEXT"].(string),
-				"IMAGE_URL" : jsonObj["IMAGE_URL"].(string),
+				"LVM_TEXT" : altText,
+				"OCR_TEXT" : ocrText,
+				"IMAGE_URL" : imageURL,
 			}, "layouts/main")
 
 		}
