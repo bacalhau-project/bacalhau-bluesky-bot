@@ -132,6 +132,12 @@ func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Not
 	sendReplyWithImage(session, notif, replyText, imageFile)
 }
 
+//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+// ALT TEXT JOB
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
 func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notification) {
 
 	// 1. Image in post
@@ -241,7 +247,7 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 		fmt.Printf("Could not generate alt-text Job file: %s", ocrJErr.Error())
 	}
 
-	ocrTextResult := bacalhau.CreateJob(ocrJob, 5)
+	ocrTextResult := bacalhau.CreateJob(ocrJob, 10)
 	fmt.Println("OCR result:", ocrTextResult)
 	fmt.Println("JobID:", ocrTextResult.JobID)
 	fmt.Println("ExecutionID:", ocrTextResult.ExecutionID)
