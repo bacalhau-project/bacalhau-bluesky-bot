@@ -29,6 +29,8 @@ body main section {
 	width: 50%;
     padding: 2em;
     box-sizing: border-box;
+    overflow: scroll;
+    max-height: 75vh;
 }
 
 body main section article{
