@@ -262,7 +262,7 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 
 		for _, sentence := range splitAltText {
 
-			if len(truncatedAltText) + (len(sentence) + 1) < 240 {
+			if len(truncatedAltText) + (len(sentence) + 1) < 220 {
 				truncatedAltText += fmt.Sprintf("%s. ", sentence)
 			} else {
 				continue
@@ -309,7 +309,9 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 
 					fmt.Println("shortURL:", shortURL)
 
-					truncatedAltText += "\n\n" + shortURL
+					shortLinkStr := "\n\nLonger description + OCR:\n" + shortURL
+
+					truncatedAltText += shortLinkStr
 					sendReply(session, notif, truncatedAltText)
 
 				}
