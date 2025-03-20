@@ -537,9 +537,12 @@ func startHTTPServer() {
 			}
 			
 			if ocrText != "" {
+
+				formattedOCR := strings.ReplaceAll(ocrText, "\n", "<br/>")
+
 				content = fiber.Map{
 					"LVM_TEXT" : altText,
-					"OCR_TEXT" : ocrText,
+					"OCR_TEXT" : formattedOCR,
 					"IMAGE_URL" : imageURL,
 				}
 			}

@@ -6,7 +6,7 @@ Tasks:
     Engine:
       Type: docker
       Params:
-        Image: seanmtracey/ocr-engine:initial
+        Image: seanmtracey/ocr-engine:formatting
         EnvironmentVariables:
           - IMAGE_URL=https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:hw7is7jjkrz2alyls4zqqjiy/bafkreifld7yzgywmtl6ctuafs2vyoq7o3cbldz7mog5dkte7ugskx2p22a@jpeg
           # - S3_BUCKET=<BUCKET_NAME>
