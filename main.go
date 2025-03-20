@@ -220,7 +220,7 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 
 	fmt.Println("Prompt Text:", prompt)
 
-	job, jErr := bacalhau.GenerateAltTextJob(imageToGenerateAltTextFor, prompt)
+	altTextJob, jErr := bacalhau.GenerateAltTextJob(imageToGenerateAltTextFor, prompt)
 
 	if jErr != nil {
 		fmt.Printf("Could not generate alt-text Job file: %s", jErr.Error())
@@ -229,15 +229,27 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 		return
 	}
 
-	result := bacalhau.CreateJob(job, 10)
-	fmt.Println("Alt-text result:", result)
-	fmt.Println("JobID:", result.JobID)
-	fmt.Println("ExecutionID:", result.ExecutionID)
-	fmt.Println("Stdout:", result.Stdout)
+	altTextResult := bacalhau.CreateJob(altTextJob, 10)
+	fmt.Println("Alt-text result:", altTextResult)
+	fmt.Println("JobID:", altTextResult.JobID)
+	fmt.Println("ExecutionID:", altTextResult.ExecutionID)
+	fmt.Println("Stdout:", altTextResult.Stdout)
 
-	if result.Stdout == ""{
+	ocrJob, ocrJErr := bacalhau.GenerateOCRJob(imageToGenerateAltTextFor)
 
-		fmt.Printf(`Job "%s" failed to produce alt-text in the permitted timeframe.`, result.JobID)
+	if ocrJErr != nil {
+		fmt.Printf("Could not generate alt-text Job file: %s", ocrJErr.Error())
+	}
+
+	ocrTextResult := bacalhau.CreateJob(ocrJob, 5)
+	fmt.Println("OCR result:", ocrTextResult)
+	fmt.Println("JobID:", ocrTextResult.JobID)
+	fmt.Println("ExecutionID:", ocrTextResult.ExecutionID)
+	fmt.Println("Stdout:", ocrTextResult.Stdout)
+
+	if altTextResult.Stdout == ""{
+
+		fmt.Printf(`Job "%s" failed to produce alt-text in the permitted timeframe.`, altTextResult.JobID)
 
 		errorResponseTxt := generateFailureResponse()
 		sendReply(session, notif, errorResponseTxt)
@@ -246,7 +258,7 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 
 		var truncatedAltText string
 
-		splitAltText := strings.Split(result.Stdout, ". ")
+		splitAltText := strings.Split(altTextResult.Stdout, ". ")
 
 		for _, sentence := range splitAltText {
 
@@ -261,7 +273,8 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 		fmt.Println("truncatedAltText:", truncatedAltText)
 
 		payload := map[string]string{
-			"ALT_TEXT" : result.Stdout,
+			"ALT_TEXT" : altTextResult.Stdout,
+			"OCR_TEXT" : ocrTextResult.Stdout,
 			"IMAGE_URL" : imageToGenerateAltTextFor,
 		}
 
@@ -495,6 +508,7 @@ func startHTTPServer() {
 
 			return c.Render("alt-text", fiber.Map{
 				"LVM_TEXT" : jsonObj["ALT_TEXT"].(string),
+				"OCR_TEXT" : jsonObj["OCR_TEXT"].(string),
 				"IMAGE_URL" : jsonObj["IMAGE_URL"].(string),
 			}, "layouts/main")
 
