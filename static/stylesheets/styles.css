@@ -49,3 +49,17 @@ body main section img{
     max-height: 75vh;
     object-fit: contain;
 }
+
+footer {
+	position: fixed;
+    bottom: 1em;
+    right: 1em;
+    font-size: 0.8em;
+    width: 250px;
+    text-align: right;
+    line-height: 1.5em;
+}
+
+footer a{
+	color: #0055FF;
+}
