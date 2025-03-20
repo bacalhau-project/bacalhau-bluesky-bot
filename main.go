@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 	"strconv"
-	"net/http"
 	"encoding/json"
 	"math/rand"
 
@@ -17,9 +16,14 @@ import (
 	"bbb/s3uploader"
 
 	"github.com/joho/godotenv"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/template/handlebars/v2"
+	"github.com/gofiber/fiber/v2/middleware/compress"
+	"github.com/google/uuid"
 )
 
 var DEFAULT_JOB_WAIT_TIME int
+var UUIDRouteRegex string = "<regex(^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$)}>"
 
 func generateFailureResponse() string { 
 
@@ -135,6 +139,8 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 	// 3. Image in parent post
 	// 4. None.
 
+	resultsUUID := uuid.New().String()
+
 	var possibleResponsesForMissingImages = []string{
 		"It doesn't look like there were any images that we could generate alt-text for in that post. Sorry!",
 		"Couldn't find any images to generate alt-text for. Sorry!",
@@ -244,7 +250,7 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 
 		for _, sentence := range splitAltText {
 
-			if len(truncatedAltText) + (len(sentence) + 1) < 270 {
+			if len(truncatedAltText) + (len(sentence) + 1) < 240 {
 				truncatedAltText += fmt.Sprintf("%s. ", sentence)
 			} else {
 				continue
@@ -254,7 +260,50 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 
 		fmt.Println("truncatedAltText:", truncatedAltText)
 
-		sendReply(session, notif, truncatedAltText)
+		payload := map[string]string{
+			"ALT_TEXT" : result.Stdout,
+			"IMAGE_URL" : imageToGenerateAltTextFor,
+		}
+
+		payloadBytes, payloadMarshallErr := json.Marshal(payload)
+		if payloadMarshallErr != nil {
+
+			fmt.Printf("Unable to marshall result for upload: %s", payloadMarshallErr.Error())
+			sendReply(session, notif, truncatedAltText)
+
+			return
+
+		} else {
+
+			_, uploadErr := uploadResultAndGetPublicURL(resultsUUID, string(payloadBytes))
+	
+			if uploadErr != nil {
+				fmt.Println("Failed to upload result to Object Storage:", uploadErr.Error())
+				sendReply(session, notif, truncatedAltText)
+			} else {
+	
+				// Generate shortURL and payload in 
+				// preparation for results display
+
+				targetURL := fmt.Sprintf("%s/alt-text-result/%s", os.Getenv("SERVER_ORIGIN"), resultsUUID)
+
+				shortURL, sURLErr := gancho.GenerateShortURL(targetURL)
+
+				if sURLErr != nil {
+					fmt.Println("Could not generate shortURL for results with Gancho:", sURLErr)
+					sendReply(session, notif, truncatedAltText)
+				} else {
+
+					fmt.Println("shortURL:", shortURL)
+
+					truncatedAltText += "\n\n" + shortURL
+					sendReply(session, notif, truncatedAltText)
+
+				}
+	
+			}
+
+		}
 
 	}
 
@@ -385,26 +434,83 @@ func sendReply(session *bsky.Session, notif bsky.Notification, replyText string)
 	bsky.RecordResponse(responseUri)
 }
 
-func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-}
-
 func startHTTPServer() {
-	http.HandleFunc("/__gtg", healthCheckHandler)
+	// http.HandleFunc("/__gtg", healthCheckHandler)
 
 	port := ":8080" // Default port
 	if envPort := os.Getenv("PORT"); envPort != "" {
 		port = ":" + envPort
 	}
 
-	fmt.Printf("Starting HTTP server on port %s\n", port)
-	go func() {
-		if err := http.ListenAndServe(port, nil); err != nil {
-			fmt.Printf("HTTP server failed: %s\n", err.Error())
-			fmt.Println("Unexpected condition in application. Exiting.")
-			os.Exit(1)
+	engine := handlebars.New("./views", ".hbs")
+
+	app := fiber.New(fiber.Config{
+		DisableStartupMessage : true,
+		Views: engine,
+		ServerHeader: "bacalhau-bluesky-bot",
+		AppName: "bacalhau-bluesky-bot",
+	})
+
+	app.Use(compress.New(compress.Config{
+		Level: compress.LevelBestSpeed,
+	}))
+
+	app.Static("/", "./static")
+
+    // Define a route for the GET method on the root path '/'
+    app.Get("/__gtg", func(c *fiber.Ctx) error {
+        // Send a string response to the client
+		c.Status(200)
+        return nil
+    })
+
+	app.Get("/alt-text-result/:uuid" + UUIDRouteRegex, func(c *fiber.Ctx) error {
+		
+		fmt.Println("Alt-Text Results ID:", c.Params("uuid"))
+
+		resultsKey := fmt.Sprintf("%s.txt", c.Params("uuid"))
+		
+		bucketName := os.Getenv("RESULTS_BUCKET")
+		s3Client, clientErr := s3uploader.NewS3Uploader(bucketName)
+
+		if clientErr != nil {
+			fmt.Println("Client err:", clientErr.Error())
 		}
-	}()
+
+		results, rErr := s3Client.GetObject(resultsKey)
+
+		if rErr != nil {
+			fmt.Println("S3 Err:", rErr.Error())
+			return rErr
+		} else {
+
+			var jsonObj map[string]interface{}
+			unmarshalErr := json.Unmarshal(results, &jsonObj)
+			if unmarshalErr != nil {
+				fmt.Printf("Error parsing JSON: %v\n", unmarshalErr)
+				return unmarshalErr
+			}
+
+			fmt.Println(jsonObj["ALT_TEXT"].(string))
+
+			return c.Render("alt-text", fiber.Map{
+				"LVM_TEXT" : jsonObj["ALT_TEXT"].(string),
+				"IMAGE_URL" : jsonObj["IMAGE_URL"].(string),
+			}, "layouts/main")
+
+		}
+
+	})
+
+    // Start the server on port 3000
+    err := app.Listen(port)
+
+	if err != nil {
+		fmt.Printf("HTTP server failed: %s\n", err.Error())
+		fmt.Println("Unexpected condition in application. Exiting.")
+		os.Exit(1)
+	}
+
 }
 
 func main() {
