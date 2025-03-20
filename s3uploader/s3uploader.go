@@ -54,3 +54,24 @@ func (u *S3Uploader) UploadFile(objectKey string, content []byte, contentType st
 	url := fmt.Sprintf("https://%s.s3.amazonaws.com/%s", u.bucket, objectKey)
 	return url, nil
 }
+
+func (u *S3Uploader) GetObject(objectKey string) ([]byte, error) {
+	input := &s3.GetObjectInput{
+		Bucket: aws.String(u.bucket),
+		Key:    aws.String(objectKey),
+	}
+
+	result, err := u.client.GetObject(context.TODO(), input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve object from S3: %v", err)
+	}
+	defer result.Body.Close()
+
+	buf := new(bytes.Buffer)
+	_, err = buf.ReadFrom(result.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read object data: %v", err)
+	}
+
+	return buf.Bytes(), nil
+}
