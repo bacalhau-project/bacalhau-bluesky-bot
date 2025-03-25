@@ -1,0 +1,12 @@
+Name: calculator
+Type: batch
+Count: 1
+Tasks:
+  - Name: main
+    Engine:
+      Type: docker
+      Params:
+        Image: seanmtracey/bbb-calculator:latest
+    Resources: 
+      CPU: "1"
+      Memory: "128MB"

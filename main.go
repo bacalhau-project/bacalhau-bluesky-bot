@@ -576,18 +576,18 @@ func main() {
 	BLUESKY_USERS := strings.Split(os.Getenv("BLUESKY_USERS"), ",")
 	BLUESKY_PASSES := strings.Split(os.Getenv("BLUESKY_PASSES"), ",")
 
-	if len(BLUESKY_USERS) == 0 {
-		fmt.Println("No users set by BLUESKY_USERS environment variable. At least one user handle must be set for the Bacalhau Bluesky Bot to operate.")
+	var BLUESKY_ACCOUNTS map[string]interface{}
+
+	accountLoadErr := json.Unmarshal([]byte(os.Getenv("BLUESKY_ACCOUNTS")), &BLUESKY_ACCOUNTS)
+
+	if accountLoadErr != nil {
+		fmt.Println("Could not load bot account credentials from environment variables. Exiting.")
+		fmt.Printf("Error: %s\n", accountLoadErr.Error())
 		os.Exit(1)
 	}
 
-	if len(BLUESKY_PASSES) == 0 {
-		fmt.Println("No passwords set by BLUESKY_PASSES environment variable. At least one username/password combination must be set for the Bacalhau Bluesky Bot to operate.")
-		os.Exit(1)
-	}
-
-	if len(BLUESKY_USERS) != len(BLUESKY_PASSES) {
-		fmt.Println( fmt.Sprintf( `The number of BLUESKY_USERS (%d) is not equal to the number of BLUESKY_PASSES (%d) set in environment variables. Please check that you have a password set for each user for the Bacalhau Bluesky Bot to operate.`, len(BLUESKY_USERS), len(BLUESKY_PASSES) ) )
+	if len(BLUESKY_ACCOUNTS) == 0 {
+		fmt.Println("No account credentials have been set with the BLUESKY_ACCOUNTS environment variable. A stringified JSON object with at least 1 username:password combo should be set for program to execute. Exiting.")
 		os.Exit(1)
 	}
 
@@ -643,10 +643,6 @@ func main() {
 					isPostACommand, postComponents, commandType, className := bacalhau.CheckPostIsCommand(notif.Record.Text, username)
 					if notif.Reason == "mention" && bsky.ShouldRespond(notif) && !bsky.HasResponded(notif.Uri) && isPostACommand {
 						fmt.Printf("Command detected: %s\n", notif.Record.Text)
-
-						// Acknowledge job request
-						// acknowledgeJobRequest := "We got your job and we're running it now!\n\n" + "You should get results in a few seconds while we let it run, so hold tight and check your notifications!"
-						// go sendReply(session, notif, acknowledgeJobRequest)
 
 						// Dispatch the appropriate job
 						switch commandType {

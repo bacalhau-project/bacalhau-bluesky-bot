@@ -1,0 +1,9 @@
+{
+    "name" : "calculator",
+    "storage" : false,
+    "environmentVariables" : [
+        "post",
+        "user",
+        "images"
+    ]
+}
