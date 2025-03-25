@@ -24,6 +24,44 @@ import (
 
 var DEFAULT_JOB_WAIT_TIME int
 var UUIDRouteRegex string = "<regex(^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$)}>"
+var EXPANSO_BOTS []string
+var COMMUNITY_BOTS []string
+
+func isExpansoBotAccount(botHandle string) (bool) {
+
+	var isExpansoBot bool = false
+
+	for _, expansoBotHandle := range EXPANSO_BOTS {
+
+		if botHandle == expansoBotHandle {
+			isExpansoBot = true
+			break
+		}
+
+	}
+
+	fmt.Printf("Is %s an Expanso bot? %t\n", botHandle, isExpansoBot)
+
+	return isExpansoBot
+
+}
+
+func loadCommunityBotDetails(ref *[]string) error {
+
+	candidateBots, err := os.ReadDir("./community")
+
+	if err != nil {
+        return err
+    }
+ 
+    for _, e := range candidateBots {
+		fmt.Println(e.Name())
+		*ref = append(*ref, e.Name()) // Correct: Assign back to *ref
+    }
+
+	return nil
+
+}
 
 func generateFailureResponse() string { 
 
@@ -609,6 +647,13 @@ func main() {
 
 	}
 
+	EXPANSO_BOTS = strings.Split( os.Getenv("EXPANSO_BOTS"), ",")
+	fmt.Println("EXPANSO_BOTS:", EXPANSO_BOTS)
+
+	loadCommunityBotDetails(&COMMUNITY_BOTS)
+
+	fmt.Println("Comm. Bots:", COMMUNITY_BOTS)
+
 	// Start HTTP server for healthchecks
 	go startHTTPServer()
 
@@ -642,24 +687,33 @@ func main() {
 					// Process only "mention" notifications if they match a command
 					isPostACommand, postComponents, commandType, className := bacalhau.CheckPostIsCommand(notif.Record.Text, username)
 					if notif.Reason == "mention" && bsky.ShouldRespond(notif) && !bsky.HasResponded(notif.Uri) && isPostACommand {
-						fmt.Printf("Command detected: %s\n", notif.Record.Text)
+						
+						if isExpansoBotAccount(bskyHandle) {
 
-						// Dispatch the appropriate job
-						switch commandType {
-							case "job_file":
-								go dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
-							case "classify_image":
-								go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, false, false, className)
-							case "hotdog":
-								go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, false, className)
-							case "arbitraryClass":
-								go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, true, className)
-							case "altText":
-								go dispatchAltTextJobAndPostReply(session, notif)
+							fmt.Printf("Command detected: %s\n", notif.Record.Text)
+	
+							// Dispatch the appropriate job
+							switch commandType {
+								case "job_file":
+									go dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
+								case "classify_image":
+									go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, false, false, className)
+								case "hotdog":
+									go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, false, className)
+								case "arbitraryClass":
+									go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, true, className)
+								case "altText":
+									go dispatchAltTextJobAndPostReply(session, notif)
+							}
+	
+							fmt.Printf("Dispatched jobs and responses to mention: %s\n", notif.Record.Text)
+							bsky.RecordResponse(notif.Uri)
+
+						} else {
+
+							// Start working through the community bots...
+
 						}
-
-						fmt.Printf("Dispatched jobs and responses to mention: %s\n", notif.Record.Text)
-						bsky.RecordResponse(notif.Uri)
 
 					}
 
