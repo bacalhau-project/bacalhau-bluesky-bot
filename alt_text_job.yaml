@@ -18,6 +18,6 @@ Tasks:
       Type: Full
     Resources: 
       CPU: "1"
-      Memory: "50GB"
+      Memory: "40GB"
       Disk: "10GB"
       GPU: "1"
