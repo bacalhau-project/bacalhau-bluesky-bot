@@ -2,8 +2,10 @@
     "name" : "calculator",
     "storage" : false,
     "environmentVariables" : [
-        "post",
-        "user",
-        "images"
-    ]
+        "POST",
+        "FROM",
+        "IMAGES",
+        "PROCESSED_POST"
+    ],
+    "type" : "mention"
 }

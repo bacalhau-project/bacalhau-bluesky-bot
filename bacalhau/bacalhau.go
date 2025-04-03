@@ -162,6 +162,69 @@ func GetJobFileFromURL(url string) (string, error) {
 	return string(jsonContent), nil
 }
 
+func ConvertYamlToJSON(yamlFile string) (map[string]interface{}, error) {
+
+	yamlBytes := []byte(yamlFile)
+
+	var yamlContent map[string]interface{}
+	if err := yaml.Unmarshal(yamlBytes, &yamlContent); err != nil {
+		return nil, fmt.Errorf("an error occurred parsing the YAML file: %w", err)
+	}
+
+	jsonBytes, err := json.Marshal(yamlContent)
+	if err != nil {
+		return nil, fmt.Errorf("an error occurred converting YAML to JSON: %w", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(jsonBytes, &result); err != nil {
+		return nil, fmt.Errorf("an error occurred unmarshaling JSON bytes: %w", err)
+	}
+
+	return result, nil
+
+}
+
+func LoadEnvVarsToJob(jobFile *string, desiredVars []string, values map[string]interface{}) error {
+
+	var yamlContent map[string]interface{}
+	if err := yaml.Unmarshal([]byte(*jobFile), &yamlContent); err != nil {
+		return fmt.Errorf("an error occurred parsing the YAML file: %w", err)
+	}
+
+	// Add or update the IMAGE environment variable manually
+	tasks := yamlContent["Tasks"].([]interface{})
+	firstTask := tasks[0].(map[string]interface{})
+	engine := firstTask["Engine"].(map[string]interface{})
+	params := engine["Params"].(map[string]interface{})
+	envVars := []string{}
+
+	for _, desiredVar := range desiredVars {
+
+		fmt.Println("desiredVar", desiredVar, values[desiredVar])
+
+		if val, ok := values[desiredVar]; ok {
+			envVars = append(envVars, fmt.Sprintf("%s=%v", desiredVar, val))
+		} else {
+			// fmt.Printf("Warning: No value found for desired env var %s\n", desiredVar)
+		}
+
+	}
+
+	params["EnvironmentVariables"] = envVars
+
+	marshalledFile, mErr := yaml.Marshal(yamlContent)
+
+	if mErr != nil {
+		return fmt.Errorf("an error occurred marshalling the modified YAML file: %w", mErr)
+	}
+
+	*jobFile = string(marshalledFile)
+
+	return nil
+
+}
+
 func GenerateClassificationJob(imageURL string, isHotDogJob bool, className string) (string, error) {
 	// Read the YAML file
 	jobFileTemplate, jtErr := os.ReadFile("./classify_job.yaml")
@@ -496,7 +559,6 @@ func CreateJob(jobSpec string, timeToWaitForResults int) JobExecutionResult {
 
 }
 
-
 func StopJob(jobID, reason string, wait bool) (string, error) {
 
 	if wait == true {
@@ -608,5 +670,7 @@ func CheckPostIsCommand(post string, accountUsername string) (bool, bsky.PostCom
 	return isJobRunCommand || isClassifyJobCommand || isHotDogJobCommand || isArbitraryClassCommand || isAltTextCommand, components, commandType, className
 
 }
+
+
 
 

@@ -25,7 +25,14 @@ import (
 var DEFAULT_JOB_WAIT_TIME int
 var UUIDRouteRegex string = "<regex(^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$)}>"
 var EXPANSO_BOTS []string
-var COMMUNITY_BOTS []string
+var COMMUNITY_BOTS []CommunityBot
+
+type CommunityBot struct {
+	Name string `json:"name"`
+	Storage bool `json:"storage"`
+	EnvironmentVariables []string `json:"environmentVariables"`
+	JobFile string `json:jobFile`
+}
 
 func isExpansoBotAccount(botHandle string) (bool) {
 
@@ -46,7 +53,7 @@ func isExpansoBotAccount(botHandle string) (bool) {
 
 }
 
-func loadCommunityBotDetails(ref *[]string) error {
+func loadCommunityBotDetails(ref *[]CommunityBot) error {
 
 	candidateBots, err := os.ReadDir("./community")
 
@@ -54,12 +61,89 @@ func loadCommunityBotDetails(ref *[]string) error {
         return err
     }
  
-    for _, e := range candidateBots {
-		fmt.Println(e.Name())
-		*ref = append(*ref, e.Name()) // Correct: Assign back to *ref
+    for _, cB := range candidateBots {
+		// fmt.Println(e.Name())
+		// *ref = append(*ref, e.Name()) // Correct: Assign back to *ref
+
+		workingDir := fmt.Sprintf("./community/%s/", cB.Name())
+
+		infoFile, iErr := os.ReadFile(fmt.Sprintf("%s/info.json", workingDir))
+		jobFile, jErr := os.ReadFile(fmt.Sprintf("%s/job.yaml", workingDir))
+
+		if iErr != nil {
+			fmt.Println("Error loading %s info file:", iErr.Error())
+			continue
+		}
+
+		if jErr != nil {
+			fmt.Println("Error loading %s job file:", jErr.Error())
+			continue
+		}
+
+		bot := CommunityBot{}
+
+		unmarshalErr := json.Unmarshal(infoFile, &bot)
+		if unmarshalErr != nil {
+			fmt.Printf("Error parsing Community Bot JSON: %s\n", unmarshalErr.Error())
+			continue
+		}
+
+		bot.JobFile = string(jobFile)
+
+		*ref = append(*ref, bot)
+
     }
 
 	return nil
+
+}
+
+func startCommunityJob(session *bsky.Session, notif bsky.Notification, bot CommunityBot, accountName string) {
+
+	processedPost := strings.Replace(notif.Record.Text, fmt.Sprintf("@%s", accountName), "", -1)
+
+	envVarValues := map[string]interface{}{
+		"POST" : notif.Record.Text,
+		"FROM" : notif.Author.Handle,
+		"IMAGES" : notif.Post.Images,
+		"PROCESSED_POST" : processedPost,
+		"WHOAMI" : accountName,
+	}
+	
+	envLoadErr := bacalhau.LoadEnvVarsToJob(&bot.JobFile, bot.EnvironmentVariables, envVarValues)
+	if envLoadErr != nil {
+		fmt.Println("Could not load env vars to Community Bot Job file.", envLoadErr.Error())
+		return
+	}
+	
+	jobJSON, convErr := bacalhau.ConvertYamlToJSON(bot.JobFile)
+
+	if convErr != nil {
+		fmt.Println("Failed to convert Job file to JSON:", convErr.Error())
+		return
+	}
+
+	fmt.Println("jobJSON:", jobJSON)
+
+	jobJSON["Name"] = fmt.Sprintf("%s (community)", jobJSON["Name"])
+
+	wrappedJob := map[string]interface{}{
+		"Job": jobJSON,
+	}
+
+	marshalledJSON, mErr := json.Marshal(wrappedJob)
+
+	if mErr != nil {
+		fmt.Println("Could not marshall JSON for Community Bot Job.", mErr.Error())
+	}
+
+	communityBotResult := bacalhau.CreateJob(string(marshalledJSON), 5)
+	fmt.Printf(`Community bot "%s" result: %s`, bot.Name, communityBotResult)
+	fmt.Println("JobID:", communityBotResult.JobID)
+	fmt.Println("ExecutionID:", communityBotResult.ExecutionID)
+	fmt.Println("Stdout:", communityBotResult.Stdout)
+
+	sendReply(session, notif, communityBotResult.Stdout)
 
 }
 
@@ -611,10 +695,7 @@ func main() {
 		fmt.Println("Could not find .env file. Continuing with existing environment variables.")
 	}
 
-	BLUESKY_USERS := strings.Split(os.Getenv("BLUESKY_USERS"), ",")
-	BLUESKY_PASSES := strings.Split(os.Getenv("BLUESKY_PASSES"), ",")
-
-	var BLUESKY_ACCOUNTS map[string]interface{}
+	var BLUESKY_ACCOUNTS []map[string]interface{}
 
 	accountLoadErr := json.Unmarshal([]byte(os.Getenv("BLUESKY_ACCOUNTS")), &BLUESKY_ACCOUNTS)
 
@@ -652,8 +733,6 @@ func main() {
 
 	loadCommunityBotDetails(&COMMUNITY_BOTS)
 
-	fmt.Println("Comm. Bots:", COMMUNITY_BOTS)
-
 	// Start HTTP server for healthchecks
 	go startHTTPServer()
 
@@ -661,7 +740,15 @@ func main() {
 
 	for {
 
-		for idx, bskyHandle := range BLUESKY_USERS {
+		for idx, bskyAccount := range BLUESKY_ACCOUNTS {
+
+			bskyHandle, handleOk := bskyAccount["username"].(string)
+			bskyPass, passOk := bskyAccount["pass"].(string)
+
+			if !handleOk || !passOk {
+				fmt.Printf("Invalid account data at index %d\n", idx)
+				continue
+			}
 
 			fmt.Printf("Attempting to authenticate for user: %s\n", bskyHandle)
 
@@ -683,43 +770,77 @@ func main() {
 					return
 				}
 
-				for _, notif := range notifications {
+				if isExpansoBotAccount(bskyHandle) {
+	
+					for _, notif := range notifications {
 					// Process only "mention" notifications if they match a command
-					isPostACommand, postComponents, commandType, className := bacalhau.CheckPostIsCommand(notif.Record.Text, username)
-					if notif.Reason == "mention" && bsky.ShouldRespond(notif) && !bsky.HasResponded(notif.Uri) && isPostACommand {
+
+						isPostACommand, postComponents, commandType, className := bacalhau.CheckPostIsCommand(notif.Record.Text, username)
 						
-						if isExpansoBotAccount(bskyHandle) {
+						if notif.Reason == "mention" && bsky.ShouldRespond(notif) && !bsky.HasResponded(notif.Uri) && isPostACommand {
+							
 
-							fmt.Printf("Command detected: %s\n", notif.Record.Text)
-	
-							// Dispatch the appropriate job
-							switch commandType {
-								case "job_file":
-									go dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
-								case "classify_image":
-									go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, false, false, className)
-								case "hotdog":
-									go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, false, className)
-								case "arbitraryClass":
-									go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, true, className)
-								case "altText":
-									go dispatchAltTextJobAndPostReply(session, notif)
+								fmt.Printf("Command detected: %s\n", notif.Record.Text)
+		
+								// Dispatch the appropriate job
+								switch commandType {
+									case "job_file":
+										go dispatchBacalhauJobAndPostReply(session, notif, postComponents.Url)
+									case "classify_image":
+										go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, false, false, className)
+									case "hotdog":
+										go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, false, className)
+									case "arbitraryClass":
+										go dispatchClassificationJobAndPostReply(session, notif, notif.ImageURL, true, true, className)
+									case "altText":
+										go dispatchAltTextJobAndPostReply(session, notif)
+								}
+		
+								fmt.Printf("Dispatched jobs and responses to mention: %s\n", notif.Record.Text)
+								bsky.RecordResponse(notif.Uri)
+
+								
+						}
+
+						
+					}
+
+				} else {
+
+					// Start working through the community bots...
+
+					for _, communityBot := range COMMUNITY_BOTS{
+
+						fmt.Println("Community Bot name:", communityBot.Name)
+
+						for _, notif := range notifications {
+
+							// targetHandle := notif.Author.Handle
+							// fmt.Println(targetHandle)
+
+							// targetAccount := strings.Split(username, ".bots.bacalhau.org")[0]
+
+							// fmt.Println("targetAccount:", targetAccount)
+							// fmt.Println("targetAccount == Bot?", targetAccount == communityBot.Name)
+
+							if notif.Reason == "mention" && bsky.ShouldRespond(notif) && !bsky.HasResponded(notif.Uri){
+
+								// fmt.Println("Would respond to this notification:", notif.Uri)
+
+								go startCommunityJob(session, notif, communityBot, username)
+
+								bsky.RecordResponse(notif.Uri)
+
 							}
-	
-							fmt.Printf("Dispatched jobs and responses to mention: %s\n", notif.Record.Text)
-							bsky.RecordResponse(notif.Uri)
-
-						} else {
-
-							// Start working through the community bots...
 
 						}
 
 					}
 
 				}
+				
 
-			}(bskyHandle, BLUESKY_PASSES[idx])
+			}(bskyHandle, bskyPass)
 
 		}
 
