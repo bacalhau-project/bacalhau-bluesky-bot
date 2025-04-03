@@ -14,6 +14,8 @@ Tasks:
           # - AWS_ACCESS_KEY_ID=<ACCESS_KEY_ID>
           # - AWS_SECRET_ACCESS_KEY=<ACCESS_KEY_SECRET>
           # - S3_BUCKET
+    Timeouts:
+      QueueTimeout: 300
     Network:
       Type: Full
     Resources: 
