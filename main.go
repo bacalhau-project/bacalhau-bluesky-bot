@@ -235,7 +235,7 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 		return
 	}
 
-	altTextResult := bacalhau.CreateJob(altTextJob, 10)
+	altTextResult := bacalhau.CreateJob(altTextJob, 20)
 	fmt.Println("Alt-text result:", altTextResult)
 	fmt.Println("JobID:", altTextResult.JobID)
 	fmt.Println("ExecutionID:", altTextResult.ExecutionID)
