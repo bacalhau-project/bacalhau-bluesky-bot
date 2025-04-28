@@ -138,12 +138,30 @@ func dispatchClassificationJobAndPostReply(session *bsky.Session, notif bsky.Not
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
+func respondWhileAltTextIsDown(session *bsky.Session, notif bsky.Notification) {
+
+	var possibleResponses = []string{
+		"The alt-text bot is offline for maintenance at the moment, so we're not able to get you alt-text at this time. Sorry!",
+		"Sorry, the alt-text bot is offline while we undertake some maintenance at the moment. Please try again later.",
+		"The alt-text bot is undergoing maintenance at the moment, so we're not able to get you some alt-text at this time. Please try again later.",
+	}
+
+	selectedResponse := possibleResponses[ rand.Intn( len( possibleResponses ) ) ]
+
+	sendReply(session, notif, selectedResponse)
+
+}
+
 func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notification) {
 
 	// 1. Image in post
 	// 2. Image in quoted post
 	// 3. Image in parent post
 	// 4. None.
+
+	respondWhileAltTextIsDown(session, notif)
+
+	return
 
 	resultsUUID := uuid.New().String()
 
