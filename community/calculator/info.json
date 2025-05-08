@@ -8,5 +8,6 @@
         "PROCESSED_POST"
     ],
     "type" : "mention",
-    "repo" : "https://github.com/seanmtracey/bbb-calculator"
+    "repo" : "https://github.com/seanmtracey/bbb-calculator",
+    "author" : "@seanmtracey.bsky.social"
 }
