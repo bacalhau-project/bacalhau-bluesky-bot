@@ -159,10 +159,6 @@ func dispatchAltTextJobAndPostReply(session *bsky.Session, notif bsky.Notificati
 	// 3. Image in parent post
 	// 4. None.
 
-	respondWhileAltTextIsDown(session, notif)
-
-	return
-
 	resultsUUID := uuid.New().String()
 
 	var possibleResponsesForMissingImages = []string{
