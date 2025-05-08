@@ -243,6 +243,9 @@ func GenerateAltTextJob(imageURL, prompt string) (string, error) {
 		fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", os.Getenv("AWS_SECRET_ACCESS_KEY")),
 		fmt.Sprintf("S3_BUCKET=%s", os.Getenv("S3_IMAGE_BUCKET")),
 		fmt.Sprintf("PROMPT_TEXT=%s", prompt),
+		fmt.Sprintf("OPEN_AI_ORIGIN=%s", os.Getenv("OPEN_AI_ORIGIN")),
+		fmt.Sprintf("OPEN_AI_KEY=%s", os.Getenv("OPEN_AI_KEY")),
+		fmt.Sprintf("OPEN_AI_MODEL=%s", os.Getenv("OPEN_AI_MODEL")),
 	}
 
 	params["EnvironmentVariables"] = envVars
