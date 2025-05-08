@@ -51,3 +51,8 @@ go build -o bbb
 ```bash
 ./bbb
 ```
+
+
+## Community Bots
+
+You can run a Bluesky bot using the Bacalhau Bluesky Bot Network. Check out our [guidelines](/COMMUNITY_BOTS.md) to find out how to do so!.

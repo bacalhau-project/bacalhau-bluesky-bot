@@ -1,0 +1,13 @@
+{
+    "name" : "calculator",
+    "storage" : false,
+    "environmentVariables" : [
+        "POST",
+        "FROM",
+        "IMAGES",
+        "PROCESSED_POST"
+    ],
+    "type" : "mention",
+    "repo" : "https://github.com/seanmtracey/bbb-calculator",
+    "author" : "@seanmtracey.bsky.social"
+}
