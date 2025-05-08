@@ -7,5 +7,6 @@
         "IMAGES",
         "PROCESSED_POST"
     ],
-    "type" : "mention"
+    "type" : "mention",
+    "repo" : "https://github.com/seanmtracey/bbb-calculator"
 }
